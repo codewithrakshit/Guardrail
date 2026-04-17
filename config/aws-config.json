@@ -1,0 +1,24 @@
+{
+  "region": "us-east-1",
+  "projectName": "guardrail-demo",
+  "bedrock": {
+    "modelId": "amazon.nova-lite-v1:0",
+    "maxTokens": 2000,
+    "temperature": 0.1
+  },
+  "dynamodb": {
+    "tableName": "guardrail-events",
+    "billingMode": "PAY_PER_REQUEST"
+  },
+  "cloudwatch": {
+    "logGroup": "/guardrail-ai/detections",
+    "retentionDays": 7
+  },
+  "secretsManager": {
+    "namePrefix": "guardrail",
+    "tags": {
+      "ManagedBy": "GuardRailAI",
+      "Environment": "production"
+    }
+  }
+}

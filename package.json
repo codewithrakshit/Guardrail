@@ -1,0 +1,16 @@
+{
+  "name": "guardrail-ai",
+  "version": "1.0.0",
+  "description": "Autonomous secure-coding agent for IDE",
+  "main": "src/index.js",
+  "scripts": {
+    "deploy": "node scripts/deploy-infra.js",
+    "test": "node tests/run-tests.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.0.0",
+    "@aws-sdk/client-secrets-manager": "^3.0.0",
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.0.0"
+  }
+}

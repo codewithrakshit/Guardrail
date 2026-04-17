@@ -1,0 +1,161 @@
+{
+  "name": "guardrail-ai",
+  "displayName": "GuardRail AI",
+  "description": "Autonomous security remediation powered by AI. Detect vulnerabilities and apply fixes automatically.",
+  "version": "1.0.1",
+  "publisher": "guardrailai",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "security",
+    "vulnerability",
+    "scanner",
+    "ai",
+    "aws",
+    "secrets"
+  ],
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:python",
+    "onLanguage:java",
+    "onLanguage:go",
+    "onLanguage:ruby",
+    "onLanguage:php"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "guardrailai.scanFile",
+        "title": "GuardRail AI: Scan Current File",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "guardrailai.scanWorkspace",
+        "title": "GuardRail AI: Scan Workspace",
+        "icon": "$(search)"
+      },
+      {
+        "command": "guardrailai.clearResults",
+        "title": "GuardRail AI: Clear Results",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "guardrailai.openDashboard",
+        "title": "GuardRail AI: Open Dashboard",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "guardrailai.applyFix",
+        "title": "GuardRail AI: Apply Security Fix",
+        "icon": "$(wrench)"
+      },
+      {
+        "command": "guardrailai.ignoreIssue",
+        "title": "GuardRail AI: Ignore Issue",
+        "icon": "$(close)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "guardrailai.scanFile",
+        "key": "ctrl+shift+g",
+        "mac": "cmd+shift+g",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "guardrailai.scanFile",
+          "group": "guardrailai",
+          "when": "resourceLangId in guardrailai.supportedLanguages"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "guardrailai.scanFile",
+          "group": "navigation",
+          "when": "resourceLangId in guardrailai.supportedLanguages"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "GuardRail AI",
+      "properties": {
+        "guardrailai.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:3001",
+          "description": "GuardRail AI API URL"
+        },
+        "guardrailai.autoScanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan files when saved"
+        },
+        "guardrailai.showInlineErrors": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline error diagnostics"
+        },
+        "guardrailai.enableStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show status bar item"
+        },
+        "guardrailai.timeout": {
+          "type": "number",
+          "default": 30000,
+          "description": "API request timeout in milliseconds"
+        },
+        "guardrailai.supportedLanguages": {
+          "type": "array",
+          "default": [
+            "javascript",
+            "typescript",
+            "python",
+            "java",
+            "go",
+            "ruby",
+            "php"
+          ],
+          "description": "Languages to scan"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^2.3.0",
+    "typescript": "^5.0.0",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/guardrail-ai-vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/guardrail-ai-vscode/issues"
+  },
+  "homepage": "https://guardrailai.com"
+}

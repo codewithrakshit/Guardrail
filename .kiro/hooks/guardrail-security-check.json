@@ -1,0 +1,13 @@
+{
+  "name": "GuardRail Security Check",
+  "version": "1.0.0",
+  "description": "Autonomous security remediation on file save - detects vulnerabilities and generates secure fixes",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["*.js", "*.ts", "*.py", "*.java", "*.go", "*.rb", "*.php"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A file was just saved. Analyze it for security vulnerabilities using GuardRail AI:\n1. Extract the file content and recent changes\n2. Run security analysis via src/index.js\n3. If risks detected: generate remediation, create AWS secrets if needed, show diff preview\n4. Present findings with clear accept/reject options\n5. If accepted, apply the patch and log the event\n\nFile: {{file}}\nLanguage: {{language}}\n\nExecute the full GuardRail pipeline now."
+  }
+}

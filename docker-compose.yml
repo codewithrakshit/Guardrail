@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  api:
+    build: ./api
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - FRONTEND_URL=http://localhost:3000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - BEDROCK_MAX_TOKENS=2000
+      - DYNAMODB_TABLE=GuardRailSessions
+      - EVENTS_TABLE=GuardRailEvents
+      - S3_BUCKET=guardrail-sessions
+      - LOG_GROUP=/guardrail-ai/public
+      - RATE_LIMIT=50
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    command: npm run dev
+
+  web:
+    build: ./web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+    depends_on:
+      - api
