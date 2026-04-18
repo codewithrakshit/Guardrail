@@ -26,11 +26,25 @@ class SecurityOrchestrator {
     const startTime = Date.now();
 
     try {
+      // Log scan start
+      await this.logger.logScanStart({
+        sessionId,
+        language,
+        filename,
+        fileSize: code.length
+      });
+
       // Step 1: Store encrypted code in S3
       await this.storage.storeCode(sessionId, code, filename);
 
       // Step 2: Analyze with AI
       console.log(`[${sessionId}] Analyzing code with AI...`);
+      await this.logger.logScanProgress({
+        sessionId,
+        step: 'analyzing',
+        details: 'Running AI security analysis'
+      });
+      
       const analysis = await this.bedrock.analyzeCode({
         code,
         language,
