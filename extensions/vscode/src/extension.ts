@@ -7,6 +7,7 @@ import { StatusBarManager } from './statusBar';
 let scanner: GuardRailScanner;
 let diagnosticsManager: DiagnosticsManager;
 let statusBar: StatusBarManager;
+const sessionIdMap = new Map<string, string>(); // Store sessionId by document URI
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('GuardRail AI extension is now active');
@@ -162,7 +163,7 @@ async function scanDocument(document: vscode.TextDocument) {
                     statusBar.setIssuesFound(vulnerabilityCount);
                     
                     // Store sessionId for later fix generation
-                    (document as any)._guardrailSessionId = result.sessionId;
+                    sessionIdMap.set(document.uri.toString(), result.sessionId);
                     
                     // Small delay to show the completion message
                     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -175,7 +176,10 @@ async function scanDocument(document: vscode.TextDocument) {
                         if (selection === 'View Issues') {
                             vscode.commands.executeCommand('workbench.actions.view.problems');
                         } else if (selection === 'Apply Fixes') {
-                            generateAndApplyFixes(document, result.sessionId);
+                            const sessionId = sessionIdMap.get(document.uri.toString());
+                            if (sessionId) {
+                                generateAndApplyFixes(document, sessionId);
+                            }
                         }
                     });
                 } else {
