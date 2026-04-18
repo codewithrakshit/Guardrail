@@ -8,3 +8,10 @@ coverage/
 .vscode/
 *.swp
 *.swo
+
+# Next.js
+.next/
+out/
+
+# Extension builds
+*.vsix
