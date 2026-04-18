@@ -1,42 +1,31 @@
 /**
  * Patch Generator
- * Creates secure code replacements using Bedrock
+ * Creates secure code replacements using Groq API
  */
 
-const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const Groq = require('groq-sdk');
 
 class PatchGenerator {
   constructor() {
-    this.client = new BedrockRuntimeClient({ 
-      region: process.env.AWS_REGION || 'us-east-1' 
+    this.client = new Groq({
+      apiKey: process.env.GROQ_API_KEY
     });
-    this.modelId = 'amazon.nova-lite-v1:0';
+    this.model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
   }
 
   async generatePatch({ originalCode, analysis, strategy, secretRef, language }) {
     const prompt = this.buildPatchPrompt(originalCode, analysis, strategy, secretRef, language);
 
-    const payload = {
-      messages: [{ role: 'user', content: [{ text: prompt }] }],
-      inferenceConfig: {
-        maxTokens: 3000,
-        temperature: 0.2,
-        topP: 0.9
-      }
-    };
-
     try {
-      const command = new InvokeModelCommand({
-        modelId: this.modelId,
-        contentType: 'application/json',
-        accept: 'application/json',
-        body: JSON.stringify(payload)
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
+        max_tokens: 3000,
+        top_p: 0.9
       });
 
-      const response = await this.client.send(command);
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-      const secureCode = responseBody.output.message.content[0].text;
-
+      const secureCode = response.choices[0].message.content;
       const cleanCode = this.extractCode(secureCode);
 
       return {
