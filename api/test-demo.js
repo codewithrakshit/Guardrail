@@ -1,1 +1,1 @@
-'const apiKey = "sk-live-1234567890abcdef";' 
+const apiKey = "sk-live-1234567890abcdef"; 
