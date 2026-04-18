@@ -1,0 +1,10 @@
+# Mark test files with intentional vulnerabilities
+test-*.js linguist-vendored
+test-*.py linguist-vendored
+demo/** linguist-vendored
+tests/** linguist-vendored
+
+# Mark build artifacts
+*.vsix binary
+web/.next/** linguist-generated
+extensions/**/out/** linguist-generated
