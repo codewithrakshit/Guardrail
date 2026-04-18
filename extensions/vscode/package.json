@@ -123,7 +123,7 @@
       "properties": {
         "guardrailai.apiUrl": {
           "type": "string",
-          "default": "http://localhost:3001",
+          "default": "http://98.93.184.65:3001",
           "description": "GuardRail AI API URL"
         },
         "guardrailai.autoScanOnSave": {
