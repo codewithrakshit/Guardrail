@@ -138,6 +138,23 @@ class GuardRailScanner {
             return [];
         }
     }
+    async generateFix(sessionId) {
+        try {
+            console.log('[GuardRail] Generating fix for session:', sessionId);
+            const response = await this.client.post(`/api/fix/${sessionId}`);
+            console.log('[GuardRail] Fix response:', response.data);
+            return response.data;
+        }
+        catch (error) {
+            console.error('[GuardRail] Fix generation error:', error);
+            if (error.response) {
+                throw new Error(`Fix generation failed: ${error.response.data.error || error.message}`);
+            }
+            else {
+                throw error;
+            }
+        }
+    }
     async testConnection() {
         try {
             await this.client.get('/health');

@@ -154,6 +154,8 @@ async function scanDocument(document) {
                     progress.report({ message: `✅ Found ${vulnerabilityCount} security issue(s)` });
                     diagnosticsManager.setDiagnostics(document.uri, result.vulnerabilities || []);
                     statusBar.setIssuesFound(vulnerabilityCount);
+                    // Store sessionId for later fix generation
+                    document._guardrailSessionId = result.sessionId;
                     // Small delay to show the completion message
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     vscode.window.showWarningMessage(`🛡️ GuardRail AI found ${vulnerabilityCount} security issue(s)`, 'View Issues', 'Apply Fixes').then(selection => {
@@ -161,7 +163,7 @@ async function scanDocument(document) {
                             vscode.commands.executeCommand('workbench.actions.view.problems');
                         }
                         else if (selection === 'Apply Fixes') {
-                            applyFixes(document, result.patchedCode);
+                            generateAndApplyFixes(document, result.sessionId);
                         }
                     });
                 }
@@ -240,6 +242,29 @@ async function scanWorkspace() {
                 vscode.commands.executeCommand('workbench.actions.view.problems');
             }
         });
+    });
+}
+async function generateAndApplyFixes(document, sessionId) {
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'GuardRail AI',
+        cancellable: false
+    }, async (progress) => {
+        try {
+            progress.report({ message: '🔧 Generating security patches...' });
+            const fixResult = await scanner.generateFix(sessionId);
+            if (fixResult.patch && fixResult.patch.secureCode) {
+                progress.report({ message: '✅ Patches generated!' });
+                await new Promise(resolve => setTimeout(resolve, 500));
+                await applyFixes(document, fixResult.patch.secureCode);
+            }
+            else {
+                vscode.window.showWarningMessage('No fixes available');
+            }
+        }
+        catch (error) {
+            vscode.window.showErrorMessage(`Failed to generate fixes: ${error.message}`);
+        }
     });
 }
 async function applyFixes(document, patchedCode) {

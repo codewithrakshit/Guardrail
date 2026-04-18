@@ -161,6 +161,9 @@ async function scanDocument(document: vscode.TextDocument) {
                     diagnosticsManager.setDiagnostics(document.uri, result.vulnerabilities || []);
                     statusBar.setIssuesFound(vulnerabilityCount);
                     
+                    // Store sessionId for later fix generation
+                    (document as any)._guardrailSessionId = result.sessionId;
+                    
                     // Small delay to show the completion message
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
@@ -172,7 +175,7 @@ async function scanDocument(document: vscode.TextDocument) {
                         if (selection === 'View Issues') {
                             vscode.commands.executeCommand('workbench.actions.view.problems');
                         } else if (selection === 'Apply Fixes') {
-                            applyFixes(document, result.patchedCode);
+                            generateAndApplyFixes(document, result.sessionId);
                         }
                     });
                 } else {
@@ -270,6 +273,30 @@ async function scanWorkspace() {
                 vscode.commands.executeCommand('workbench.actions.view.problems');
             }
         });
+    });
+}
+
+async function generateAndApplyFixes(document: vscode.TextDocument, sessionId: string) {
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'GuardRail AI',
+        cancellable: false
+    }, async (progress) => {
+        try {
+            progress.report({ message: '🔧 Generating security patches...' });
+            
+            const fixResult = await scanner.generateFix(sessionId);
+            
+            if (fixResult.patch && fixResult.patch.secureCode) {
+                progress.report({ message: '✅ Patches generated!' });
+                await new Promise(resolve => setTimeout(resolve, 500));
+                await applyFixes(document, fixResult.patch.secureCode);
+            } else {
+                vscode.window.showWarningMessage('No fixes available');
+            }
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to generate fixes: ${error.message}`);
+        }
     });
 }
 
