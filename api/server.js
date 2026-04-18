@@ -16,6 +16,7 @@ const logsRoutes = require('./routes/logs');
 const demoRoutes = require('./routes/demo');
 const sessionRoutes = require('./routes/session');
 const webhookRoutes = require('./routes/webhook');
+const fixRoutes = require('./routes/fix');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
