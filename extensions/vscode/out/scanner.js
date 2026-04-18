@@ -143,6 +143,7 @@ class GuardRailScanner {
             console.log('[GuardRail] Generating fix for session:', sessionId);
             const response = await this.client.post(`/api/fix/${sessionId}`);
             console.log('[GuardRail] Fix response:', response.data);
+            // Return the response data directly - it already has the correct structure
             return response.data;
         }
         catch (error) {

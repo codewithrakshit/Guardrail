@@ -12,27 +12,47 @@ class BedrockClient {
     });
     this.model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
     this.maxTokens = parseInt(process.env.GROQ_MAX_TOKENS) || 2000;
+    this.maxRetries = 3;
+    this.retryDelay = 2000; // 2 seconds
   }
 
   async analyzeCode({ code, language, filename }) {
     const prompt = this.buildAnalysisPrompt(code, language, filename);
 
-    try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens: this.maxTokens,
-        top_p: 0.9
-      });
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          max_tokens: this.maxTokens,
+          top_p: 0.9
+        });
 
-      const analysisText = response.choices[0].message.content;
-      return this.parseAnalysisResponse(analysisText);
+        const analysisText = response.choices[0].message.content;
+        return this.parseAnalysisResponse(analysisText);
 
-    } catch (error) {
-      console.error('Groq analysis error:', error);
-      throw new Error(`Security analysis failed: ${error.message}`);
+      } catch (error) {
+        console.error(`Groq analysis error (attempt ${attempt}/${this.maxRetries}):`, error.message);
+        
+        // Check if it's a rate limit error
+        if (error.status === 429 || error.message?.includes('429')) {
+          if (attempt < this.maxRetries) {
+            const delay = this.retryDelay * attempt; // Exponential backoff
+            console.log(`Rate limit hit. Retrying in ${delay}ms...`);
+            await this.sleep(delay);
+            continue;
+          }
+        }
+        
+        // If not rate limit or last attempt, throw
+        throw new Error(`Security analysis failed: ${error.message}`);
+      }
     }
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   sanitizeFilename(filename) {

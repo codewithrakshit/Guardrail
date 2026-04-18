@@ -5,43 +5,34 @@
 const express = require('express');
 const router = express.Router();
 const { DynamoDBClient, ScanCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
+const { CloudWatchLogsClient, FilterLogEventsCommand } = require('@aws-sdk/client-cloudwatch-logs');
 const EventLogger = require('../services/event-logger');
 
 const dynamodb = new DynamoDBClient({ 
   region: process.env.AWS_REGION || 'us-east-1' 
 });
 
+const cloudwatch = new CloudWatchLogsClient({
+  region: process.env.AWS_REGION || 'us-east-1'
+});
+
 const eventLogger = new EventLogger();
 
 /**
  * GET /api/logs/:sessionId
- * Get all logs for a specific session
+ * Get all logs for a specific session from memory cache
  */
 router.get('/:sessionId', async (req, res, next) => {
   try {
     const { sessionId } = req.params;
     
+    // Get logs from event logger (uses cache)
     const logs = await eventLogger.getSessionLogs(sessionId);
-    
-    // Transform DynamoDB format to readable format
-    const formattedLogs = logs.map(item => ({
-      timestamp: item.timestamp?.S,
-      level: item.level?.S || 'INFO',
-      event: item.event_type?.S,
-      message: item.error_message?.S || item.message?.S || '',
-      metadata: {
-        status: item.status?.S,
-        vulnerabilityType: item.vulnerability_type?.S,
-        severity: item.severity?.S,
-        duration: item.scan_duration?.N ? parseFloat(item.scan_duration.N) : null,
-        secretCreated: item.secret_created?.BOOL
-      }
-    })).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
     res.json({
       sessionId,
-      logs: formattedLogs,
-      totalLogs: formattedLogs.length
+      logs: logs,
+      totalLogs: logs.length
     });
 
   } catch (error) {

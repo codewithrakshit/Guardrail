@@ -3,10 +3,12 @@ import { GuardRailScanner } from './scanner';
 import { DiagnosticsManager } from './diagnostics';
 import { CodeActionProvider } from './codeActions';
 import { StatusBarManager } from './statusBar';
+import { LogsPanel } from './logsPanel';
 
 let scanner: GuardRailScanner;
 let diagnosticsManager: DiagnosticsManager;
 let statusBar: StatusBarManager;
+let logsPanel: LogsPanel;
 const sessionIdMap = new Map<string, string>(); // Store sessionId by document URI
 
 export function activate(context: vscode.ExtensionContext) {
@@ -16,6 +18,7 @@ export function activate(context: vscode.ExtensionContext) {
     scanner = new GuardRailScanner();
     diagnosticsManager = new DiagnosticsManager();
     statusBar = new StatusBarManager();
+    logsPanel = new LogsPanel(context);
 
     // Register commands
     const scanFileCommand = vscode.commands.registerCommand('guardrailai.scanFile', async () => {
@@ -72,6 +75,35 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('Issue ignored');
     });
 
+    const viewLogsCommand = vscode.commands.registerCommand('guardrailai.viewLogs', async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showWarningMessage('No active editor');
+            return;
+        }
+        
+        const sessionId = sessionIdMap.get(editor.document.uri.toString());
+        if (sessionId) {
+            await logsPanel.showLogs(sessionId);
+        } else {
+            vscode.window.showInformationMessage('No scan logs available. Run a scan first.');
+        }
+    });
+
+    const refreshLogsCommand = vscode.commands.registerCommand('guardrailai.refreshLogs', async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+            const sessionId = sessionIdMap.get(editor.document.uri.toString());
+            if (sessionId) {
+                await logsPanel.showLogs(sessionId);
+            }
+        }
+    });
+
+    const clearLogsCommand = vscode.commands.registerCommand('guardrailai.clearLogs', () => {
+        logsPanel.clear();
+    });
+
     // Register code action provider
     const codeActionProvider = vscode.languages.registerCodeActionsProvider(
         { scheme: 'file' },
@@ -97,6 +129,9 @@ export function activate(context: vscode.ExtensionContext) {
         openDashboardCommand,
         applyFixCommand,
         ignoreIssueCommand,
+        viewLogsCommand,
+        refreshLogsCommand,
+        clearLogsCommand,
         codeActionProvider,
         onSaveListener,
         diagnosticsManager,
@@ -146,7 +181,16 @@ async function scanDocument(document: vscode.TextDocument) {
             progress.report({ message: '🔍 Analyzing code for vulnerabilities...' });
             statusBar.setScanning();
 
+            // Show logs panel immediately
+            await vscode.commands.executeCommand('workbench.view.extension.guardrail-container');
+
             const result = await scanner.scanCode(code, document.languageId, filename);
+            
+            // Load logs immediately after scan
+            if (result.sessionId) {
+                sessionIdMap.set(document.uri.toString(), result.sessionId);
+                await logsPanel.showLogs(result.sessionId, true); // Start polling
+            }
             
             console.log('[GuardRail AI] Scan result:', JSON.stringify(result, null, 2));
             
@@ -162,8 +206,8 @@ async function scanDocument(document: vscode.TextDocument) {
                     diagnosticsManager.setDiagnostics(document.uri, result.vulnerabilities || []);
                     statusBar.setIssuesFound(vulnerabilityCount);
                     
-                    // Store sessionId for later fix generation
-                    sessionIdMap.set(document.uri.toString(), result.sessionId);
+                    // Refresh logs
+                    logsPanel.refresh();
                     
                     // Small delay to show the completion message
                     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -171,7 +215,8 @@ async function scanDocument(document: vscode.TextDocument) {
                     vscode.window.showWarningMessage(
                         `🛡️ GuardRail AI found ${vulnerabilityCount} security issue(s)`,
                         'View Issues',
-                        'Apply Fixes'
+                        'Apply Fixes',
+                        'View Logs'
                     ).then(selection => {
                         if (selection === 'View Issues') {
                             vscode.commands.executeCommand('workbench.actions.view.problems');
@@ -180,12 +225,20 @@ async function scanDocument(document: vscode.TextDocument) {
                             if (sessionId) {
                                 generateAndApplyFixes(document, sessionId);
                             }
+                        } else if (selection === 'View Logs') {
+                            const sessionId = sessionIdMap.get(document.uri.toString());
+                            if (sessionId) {
+                                logsPanel.showLogs(sessionId);
+                            }
                         }
                     });
                 } else {
                     progress.report({ message: '✅ No security issues found!' });
                     diagnosticsManager.clear(document.uri);
                     statusBar.setSecure();
+                    
+                    // Stop polling
+                    logsPanel.stopPolling();
                     
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     vscode.window.showInformationMessage('✅ No security issues found!');
@@ -195,6 +248,7 @@ async function scanDocument(document: vscode.TextDocument) {
             }
         } catch (error: any) {
             statusBar.setError();
+            logsPanel.stopPolling();
             
             console.error('[GuardRail AI] Error:', error);
             
@@ -289,7 +343,14 @@ async function generateAndApplyFixes(document: vscode.TextDocument, sessionId: s
         try {
             progress.report({ message: '🔧 Generating security patches...' });
             
+            // Start polling logs for fix generation
+            await logsPanel.showLogs(sessionId, true);
+            
             const fixResult = await scanner.generateFix(sessionId);
+            
+            // Stop polling after fix generation
+            logsPanel.stopPolling();
+            await logsPanel.showLogs(sessionId, false);
             
             if (fixResult.patch && fixResult.patch.secureCode) {
                 progress.report({ message: '✅ Patches generated!' });
@@ -299,6 +360,7 @@ async function generateAndApplyFixes(document: vscode.TextDocument, sessionId: s
                 vscode.window.showWarningMessage('No fixes available');
             }
         } catch (error: any) {
+            logsPanel.stopPolling();
             vscode.window.showErrorMessage(`Failed to generate fixes: ${error.message}`);
         }
     });

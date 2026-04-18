@@ -11,49 +11,67 @@ class PatchGenerator {
       apiKey: process.env.GROQ_API_KEY
     });
     this.model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+    this.maxRetries = 3;
+    this.retryDelay = 2000;
   }
 
   async generatePatch({ originalCode, analysis, strategy, secretRef, language }) {
     const prompt = this.buildPatchPrompt(originalCode, analysis, strategy, secretRef, language);
 
-    try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        max_tokens: 3000,
-        top_p: 0.9
-      });
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+          max_tokens: 3000,
+          top_p: 0.9
+        });
 
-      const secureCode = response.choices[0].message.content;
-      const cleanCode = this.extractCode(secureCode);
+        const secureCode = response.choices[0].message.content;
+        const cleanCode = this.extractCode(secureCode);
 
-      return {
-        originalCode,
-        secureCode: cleanCode,
-        diff: this.generateDiff(originalCode, cleanCode),
-        explanation: analysis.explanation,
-        securityBenefit: strategy.approach,
-        confidence: strategy.confidence,
-        vulnerabilities: [{
-          type: analysis.risk_type,
-          severity: analysis.severity,
-          line: analysis.affected_lines && analysis.affected_lines[0] ? analysis.affected_lines[0] : 1,
-          column: 0,
-          message: `${analysis.severity.toUpperCase()}: ${analysis.risk_type.replace(/_/g, ' ')}`,
-          description: analysis.explanation,
-          cwe: this.getCWE(analysis.risk_type)
-        }],
-        secretRef: secretRef ? {
-          name: secretRef.secretName,
-          expiresAt: secretRef.expiresAt
-        } : null
-      };
+        return {
+          originalCode,
+          secureCode: cleanCode,
+          diff: this.generateDiff(originalCode, cleanCode),
+          explanation: analysis.explanation,
+          securityBenefit: strategy.approach,
+          confidence: strategy.confidence,
+          vulnerabilities: [{
+            type: analysis.risk_type,
+            severity: analysis.severity,
+            line: analysis.affected_lines && analysis.affected_lines[0] ? analysis.affected_lines[0] : 1,
+            column: 0,
+            message: `${analysis.severity.toUpperCase()}: ${analysis.risk_type.replace(/_/g, ' ')}`,
+            description: analysis.explanation,
+            cwe: this.getCWE(analysis.risk_type)
+          }],
+          secretRef: secretRef ? {
+            name: secretRef.secretName,
+            expiresAt: secretRef.expiresAt
+          } : null
+        };
 
-    } catch (error) {
-      console.error('Patch generation error:', error);
-      throw new Error(`Failed to generate patch: ${error.message}`);
+      } catch (error) {
+        console.error(`Patch generation error (attempt ${attempt}/${this.maxRetries}):`, error.message);
+        
+        if (error.status === 429 || error.message?.includes('429')) {
+          if (attempt < this.maxRetries) {
+            const delay = this.retryDelay * attempt;
+            console.log(`Rate limit hit. Retrying in ${delay}ms...`);
+            await this.sleep(delay);
+            continue;
+          }
+        }
+        
+        throw new Error(`Failed to generate patch: ${error.message}`);
+      }
     }
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   buildPatchPrompt(code, analysis, strategy, secretRef, language) {
