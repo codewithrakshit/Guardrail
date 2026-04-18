@@ -18,6 +18,14 @@ router.post('/:sessionId', async (req, res, next) => {
     
     console.log(`[${sessionId}] Fix request received`);
 
+    // Log fix request
+    const EventLogger = require('../services/event-logger');
+    const eventLogger = new EventLogger();
+    await eventLogger.logFixRequest({
+      sessionId,
+      vulnerabilityCount: 1
+    });
+
     // Get session details
     const sessionManager = new SessionManager();
     const session = await sessionManager.getSession(sessionId);
@@ -34,6 +42,7 @@ router.post('/:sessionId', async (req, res, next) => {
     }
 
     // Get original code from S3
+    console.log(`[${sessionId}] Retrieving original code from S3...`);
     const storage = new S3Storage();
     const originalCode = await storage.getCode(sessionId);
 
@@ -42,6 +51,7 @@ router.post('/:sessionId', async (req, res, next) => {
     }
 
     // Generate full remediation
+    console.log(`[${sessionId}] Starting remediation...`);
     const orchestrator = new SecurityOrchestrator();
     const result = await orchestrator.processCode({
       sessionId,
@@ -54,20 +64,20 @@ router.post('/:sessionId', async (req, res, next) => {
     console.log(`[${sessionId}] Fix generation complete`);
 
     // Get the patch from S3
-    const patch = await storage.getPatch(sessionId);
+    const patchData = await storage.getPatch(sessionId);
 
     res.json({
       sessionId,
       status: 'fixed',
       patch: {
         available: true,
-        secureCode: patch.secureCode,
-        originalCode: patch.originalCode,
-        diff: patch.diff,
-        explanation: patch.explanation,
-        securityBenefit: patch.securityBenefit,
-        confidence: patch.confidence,
-        secretRef: patch.secretRef
+        secureCode: patchData.secureCode,
+        originalCode: patchData.originalCode,
+        diff: patchData.diff,
+        explanation: patchData.explanation,
+        securityBenefit: patchData.securityBenefit,
+        confidence: patchData.confidence,
+        secretRef: patchData.secretRef
       },
       vulnerabilities: result.vulnerabilities,
       timestamp: new Date().toISOString()

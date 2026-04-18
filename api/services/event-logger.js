@@ -24,6 +24,12 @@ class EventLogger {
     this.tableName = process.env.EVENTS_TABLE || 'GuardRailEvents';
     this.logGroup = process.env.LOG_GROUP || '/guardrail-ai/public';
     this.sequenceTokens = new Map(); // Track sequence tokens per stream
+    
+    // In-memory cache for immediate log retrieval
+    if (!global.logCache) {
+      global.logCache = new Map();
+    }
+    this.logCache = global.logCache;
   }
 
   // Log scan start
@@ -187,8 +193,22 @@ class EventLogger {
     // Log to console for debugging
     console.log(`[${logData.level}] [${sessionId}] ${message}`);
 
-    // Log to CloudWatch
-    await this.logToCloudWatch(logData);
+    // Store in memory cache
+    if (!this.logCache.has(sessionId)) {
+      this.logCache.set(sessionId, []);
+    }
+    this.logCache.get(sessionId).push({
+      timestamp: logData.timestamp,
+      level: logData.level,
+      event_type: logData.event,
+      message: logData.message,
+      metadata: logData.metadata
+    });
+
+    // Log to CloudWatch (async, don't wait)
+    this.logToCloudWatch(logData).catch(err => {
+      console.error('CloudWatch logging failed:', err.message);
+    });
   }
 
   // Enhanced CloudWatch logging with sequence token handling
@@ -252,8 +272,14 @@ class EventLogger {
     }
   }
 
-  // Get logs for a session
+  // Get logs for a session (from cache first, then DynamoDB)
   async getSessionLogs(sessionId) {
+    // Return from cache if available
+    if (this.logCache.has(sessionId)) {
+      return this.logCache.get(sessionId);
+    }
+
+    // Fallback to DynamoDB
     try {
       const response = await this.dynamodb.send(new QueryCommand({
         TableName: this.tableName,
@@ -262,7 +288,7 @@ class EventLogger {
         ExpressionAttributeValues: {
           ':sid': { S: sessionId }
         },
-        ScanIndexForward: true // Sort by timestamp ascending
+        ScanIndexForward: true
       }));
 
       return response.Items || [];

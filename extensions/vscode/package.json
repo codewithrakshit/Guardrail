@@ -61,6 +61,21 @@
         "command": "guardrailai.ignoreIssue",
         "title": "GuardRail AI: Ignore Issue",
         "icon": "$(close)"
+      },
+      {
+        "command": "guardrailai.viewLogs",
+        "title": "GuardRail AI: View Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "guardrailai.refreshLogs",
+        "title": "Refresh Logs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "guardrailai.clearLogs",
+        "title": "Clear Logs",
+        "icon": "$(clear-all)"
       }
     ],
     "keybindings": [
@@ -71,19 +86,35 @@
         "when": "editorTextFocus"
       }
     ],
-    "menus": {
-      "editor/context": [
+
+    "views": {
+      "guardrail-container": [
         {
-          "command": "guardrailai.scanFile",
-          "group": "guardrailai",
-          "when": "resourceLangId in guardrailai.supportedLanguages"
+          "id": "guardrailLogs",
+          "name": "Scan Logs"
         }
-      ],
-      "editor/title": [
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
         {
-          "command": "guardrailai.scanFile",
-          "group": "navigation",
-          "when": "resourceLangId in guardrailai.supportedLanguages"
+          "id": "guardrail-container",
+          "title": "GuardRail AI",
+          "icon": "$(shield)"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "guardrailai.refreshLogs",
+          "when": "view == guardrailLogs",
+          "group": "navigation"
+        },
+        {
+          "command": "guardrailai.clearLogs",
+          "when": "view == guardrailLogs",
+          "group": "navigation"
         }
       ]
     },
