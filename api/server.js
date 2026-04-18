@@ -16,7 +16,6 @@ const logsRoutes = require('./routes/logs');
 const demoRoutes = require('./routes/demo');
 const sessionRoutes = require('./routes/session');
 const webhookRoutes = require('./routes/webhook');
-const fixRoutes = require('./routes/fix');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,9 +28,10 @@ app.use(cors({
   credentials: true
 }));
 
-// Webhook needs raw body BEFORE express.json()
+// Webhook route needs raw body for signature validation — must be BEFORE express.json()
 app.use('/api/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
 
+// Body parsing for all other routes
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
