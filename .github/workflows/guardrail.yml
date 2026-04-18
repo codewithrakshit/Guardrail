@@ -1,0 +1,121 @@
+name: GuardRail AI Security Scan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, master]
+
+jobs:
+  guardrail-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Get changed files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
+              | grep -E '\.(js|ts|py|java|go|rb|php)$' | head -20 || true)
+          else
+            FILES=$(git diff --name-only HEAD~1 HEAD \
+              | grep -E '\.(js|ts|py|java|go|rb|php)$' | head -20 || true)
+          fi
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run GuardRail AI scan
+        id: scan
+        env:
+          GUARDRAIL_API_URL: ${{ secrets.GUARDRAIL_API_URL || 'http://localhost:3001' }}
+        run: |
+          FILES="${{ steps.changed.outputs.files }}"
+          if [ -z "$FILES" ]; then
+            echo "No scannable files changed."
+            echo "result=clean" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          CRITICAL=0
+          HIGH=0
+          REPORT=""
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ ! -f "$file" ] && continue
+
+            EXT="${file##*.}"
+            case "$EXT" in
+              js|ts) LANG="javascript" ;;
+              py)    LANG="python" ;;
+              java)  LANG="java" ;;
+              go)    LANG="go" ;;
+              rb)    LANG="ruby" ;;
+              php)   LANG="php" ;;
+              *)     LANG="javascript" ;;
+            esac
+
+            CODE=$(cat "$file")
+            RESPONSE=$(curl -s -X POST "$GUARDRAIL_API_URL/api/scan" \
+              -H "Content-Type: application/json" \
+              -d "{\"code\": $(echo "$CODE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'), \"language\": \"$LANG\", \"filename\": \"$file\"}" \
+              --max-time 60)
+
+            STATUS=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status","error"))' 2>/dev/null || echo "error")
+            SEVERITY=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("severity","none"))' 2>/dev/null || echo "none")
+
+            if [ "$STATUS" = "vulnerable" ]; then
+              VULN_TYPE=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("vulnerabilities",[]); print(v[0].get("type","unknown") if v else "unknown")' 2>/dev/null || echo "unknown")
+              SESSION_ID=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("sessionId",""))' 2>/dev/null || echo "")
+              REPORT="$REPORT\n❌ $file — ${SEVERITY^^}: $VULN_TYPE"
+              [ -n "$SESSION_ID" ] && REPORT="$REPORT (patch: $GUARDRAIL_API_URL/api/result/$SESSION_ID)"
+              [ "$SEVERITY" = "critical" ] && CRITICAL=$((CRITICAL+1))
+              [ "$SEVERITY" = "high" ]     && HIGH=$((HIGH+1))
+            else
+              REPORT="$REPORT\n✅ $file — clean"
+            fi
+          done <<< "$FILES"
+
+          echo -e "$REPORT"
+
+          if [ $CRITICAL -gt 0 ] || [ $HIGH -gt 0 ]; then
+            echo "result=blocked" >> $GITHUB_OUTPUT
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+          else
+            echo "result=clean" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && steps.scan.outputs.result == 'blocked'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🚨 GuardRail AI — Security Issues Found\n\n**${{ steps.scan.outputs.critical }} critical** and **${{ steps.scan.outputs.high }} high** severity issues were detected.\n\nPlease review the scan results and apply the suggested patches before merging.\n\n> Powered by [GuardRail AI](https://guardrailai.com) — Autonomous Security Remediation`
+            })
+
+      - name: Fail on critical/high findings
+        if: steps.scan.outputs.result == 'blocked'
+        run: |
+          echo "GuardRail AI blocked: ${{ steps.scan.outputs.critical }} critical, ${{ steps.scan.outputs.high }} high issue(s) found."
+          exit 1

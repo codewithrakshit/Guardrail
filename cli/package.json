@@ -1,0 +1,14 @@
+{
+  "name": "guardrail",
+  "version": "1.0.0",
+  "description": "GuardRail AI CLI — scan code for vulnerabilities from the terminal",
+  "main": "index.js",
+  "bin": {
+    "guardrail": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["security", "sast", "vulnerability", "scanner", "ai"],
+  "license": "MIT"
+}
