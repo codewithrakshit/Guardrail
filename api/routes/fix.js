@@ -53,10 +53,22 @@ router.post('/:sessionId', async (req, res, next) => {
 
     console.log(`[${sessionId}] Fix generation complete`);
 
+    // Get the patch from S3
+    const patch = await storage.getPatch(sessionId);
+
     res.json({
       sessionId,
       status: 'fixed',
-      patch: result.patch,
+      patch: {
+        available: true,
+        secureCode: patch.secureCode,
+        originalCode: patch.originalCode,
+        diff: patch.diff,
+        explanation: patch.explanation,
+        securityBenefit: patch.securityBenefit,
+        confidence: patch.confidence,
+        secretRef: patch.secretRef
+      },
       vulnerabilities: result.vulnerabilities,
       timestamp: new Date().toISOString()
     });
