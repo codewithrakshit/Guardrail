@@ -16,6 +16,7 @@ const logsRoutes = require('./routes/logs');
 const demoRoutes = require('./routes/demo');
 const sessionRoutes = require('./routes/session');
 const webhookRoutes = require('./routes/webhook');
+const fixRoutes = require('./routes/fix');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -39,7 +40,7 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
+  windowMs: 60 * 60 * 1000,
   max: process.env.RATE_LIMIT || 50,
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
@@ -50,8 +51,8 @@ app.use('/api/', limiter);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  res.json({
+    status: 'healthy',
     timestamp: new Date().toISOString(),
     version: '1.0.0'
   });
@@ -63,6 +64,7 @@ app.use('/api/result', resultRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/demo', demoRoutes);
 app.use('/api/session', sessionRoutes);
+app.use('/api/fix', fixRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

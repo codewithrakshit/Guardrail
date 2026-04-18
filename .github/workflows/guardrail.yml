@@ -31,10 +31,14 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
-              | grep -E '\.(js|ts|py|java|go|rb|php)$' | head -20 || true)
+              | grep -E '\.(js|ts|py|java|go|rb|php)$' \
+              | grep -vE '^(web/\.next|extensions/vscode/out|node_modules)' \
+              | head -20 || true)
           else
             FILES=$(git diff --name-only HEAD~1 HEAD \
-              | grep -E '\.(js|ts|py|java|go|rb|php)$' | head -20 || true)
+              | grep -E '\.(js|ts|py|java|go|rb|php)$' \
+              | grep -vE '^(web/\.next|extensions/vscode/out|node_modules)' \
+              | head -20 || true)
           fi
           echo "files<<EOF" >> $GITHUB_OUTPUT
           echo "$FILES" >> $GITHUB_OUTPUT
@@ -43,7 +47,7 @@ jobs:
       - name: Run GuardRail AI scan
         id: scan
         env:
-          GUARDRAIL_API_URL: ${{ secrets.GUARDRAIL_API_URL || 'http://localhost:3001' }}
+          GUARDRAIL_API_URL: ${{ secrets.GUARDRAIL_API_URL }}
         run: |
           FILES="${{ steps.changed.outputs.files }}"
           if [ -z "$FILES" ]; then
