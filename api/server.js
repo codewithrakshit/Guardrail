@@ -15,6 +15,7 @@ const resultRoutes = require('./routes/result');
 const logsRoutes = require('./routes/logs');
 const demoRoutes = require('./routes/demo');
 const sessionRoutes = require('./routes/session');
+const fixRoutes = require('./routes/fix');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -59,6 +60,7 @@ app.use('/api/result', resultRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/demo', demoRoutes);
 app.use('/api/session', sessionRoutes);
+app.use('/api/fix', fixRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
