@@ -56,21 +56,33 @@ class GuardRailScanner {
     }
     getTimeout() {
         const config = vscode.workspace.getConfiguration('guardrailai');
-        return config.get('timeout', 30000);
+        return config.get('timeout', 60000); // Increased to 60 seconds
     }
     async scanCode(code, language, filename) {
         try {
+            console.log('[GuardRail] Starting scan...');
             // Submit scan request
             const scanResponse = await this.client.post('/api/scan', {
                 code,
                 language,
                 filename
             });
+            console.log('[GuardRail] Scan response:', scanResponse.data);
+            // Check if we got immediate results (scan-only mode)
+            if (scanResponse.data.vulnerabilities) {
+                return {
+                    sessionId: scanResponse.data.sessionId,
+                    status: 'completed',
+                    vulnerabilities: this.mapVulnerabilities(scanResponse.data.vulnerabilities),
+                    vulnerabilitiesDetected: scanResponse.data.vulnerabilities.length
+                };
+            }
             const { sessionId } = scanResponse.data;
-            // Poll for results
+            // Poll for results (legacy mode)
             return await this.pollForResults(sessionId);
         }
         catch (error) {
+            console.error('[GuardRail] Scan error:', error);
             if (error.response) {
                 throw new Error(`API Error: ${error.response.data.error || error.message}`);
             }
@@ -81,6 +93,17 @@ class GuardRailScanner {
                 throw error;
             }
         }
+    }
+    mapVulnerabilities(vulns) {
+        return vulns.map(v => ({
+            type: v.type,
+            severity: v.severity,
+            line: v.affectedLines?.[0] || 1,
+            column: 0,
+            message: `${v.severity.toUpperCase()}: ${v.type.replace(/_/g, ' ')}`,
+            description: v.explanation,
+            cwe: v.cwe
+        }));
     }
     async pollForResults(sessionId, maxAttempts = 30) {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -113,6 +136,23 @@ class GuardRailScanner {
         catch (error) {
             console.error('Failed to fetch logs:', error);
             return [];
+        }
+    }
+    async generateFix(sessionId) {
+        try {
+            console.log('[GuardRail] Generating fix for session:', sessionId);
+            const response = await this.client.post(`/api/fix/${sessionId}`);
+            console.log('[GuardRail] Fix response:', response.data);
+            return response.data;
+        }
+        catch (error) {
+            console.error('[GuardRail] Fix generation error:', error);
+            if (error.response) {
+                throw new Error(`Fix generation failed: ${error.response.data.error || error.message}`);
+            }
+            else {
+                throw error;
+            }
         }
     }
     async testConnection() {

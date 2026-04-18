@@ -7,6 +7,7 @@ import { StatusBarManager } from './statusBar';
 let scanner: GuardRailScanner;
 let diagnosticsManager: DiagnosticsManager;
 let statusBar: StatusBarManager;
+const sessionIdMap = new Map<string, string>(); // Store sessionId by document URI
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('GuardRail AI extension is now active');
@@ -135,58 +136,82 @@ async function scanDocument(document: vscode.TextDocument) {
     const code = document.getText();
     const filename = document.fileName.split('/').pop() || 'untitled';
 
-    statusBar.setScanning();
+    // Show progress with cancellation
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'GuardRail AI',
+        cancellable: false
+    }, async (progress) => {
+        try {
+            progress.report({ message: '🔍 Analyzing code for vulnerabilities...' });
+            statusBar.setScanning();
 
-    try {
-        const result = await scanner.scanCode(code, document.languageId, filename);
-        
-        console.log('[GuardRail AI] Scan result:', JSON.stringify(result, null, 2));
-        
-        if (result.status === 'completed') {
-            const vulnerabilityCount = result.vulnerabilities?.length || 0;
+            const result = await scanner.scanCode(code, document.languageId, filename);
             
-            console.log('[GuardRail AI] Vulnerabilities found:', vulnerabilityCount);
-            console.log('[GuardRail AI] Vulnerabilities:', result.vulnerabilities);
+            console.log('[GuardRail AI] Scan result:', JSON.stringify(result, null, 2));
             
-            if (vulnerabilityCount > 0) {
-                diagnosticsManager.setDiagnostics(document.uri, result.vulnerabilities || []);
-                statusBar.setIssuesFound(vulnerabilityCount);
+            if (result.status === 'completed') {
+                const vulnerabilityCount = result.vulnerabilities?.length || 0;
                 
-                vscode.window.showWarningMessage(
-                    `GuardRail AI found ${vulnerabilityCount} security issue(s)`,
-                    'View Issues',
-                    'Apply Fixes'
+                console.log('[GuardRail AI] Vulnerabilities found:', vulnerabilityCount);
+                console.log('[GuardRail AI] Vulnerabilities:', result.vulnerabilities);
+                
+                if (vulnerabilityCount > 0) {
+                    progress.report({ message: `✅ Found ${vulnerabilityCount} security issue(s)` });
+                    
+                    diagnosticsManager.setDiagnostics(document.uri, result.vulnerabilities || []);
+                    statusBar.setIssuesFound(vulnerabilityCount);
+                    
+                    // Store sessionId for later fix generation
+                    sessionIdMap.set(document.uri.toString(), result.sessionId);
+                    
+                    // Small delay to show the completion message
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    vscode.window.showWarningMessage(
+                        `🛡️ GuardRail AI found ${vulnerabilityCount} security issue(s)`,
+                        'View Issues',
+                        'Apply Fixes'
+                    ).then(selection => {
+                        if (selection === 'View Issues') {
+                            vscode.commands.executeCommand('workbench.actions.view.problems');
+                        } else if (selection === 'Apply Fixes') {
+                            const sessionId = sessionIdMap.get(document.uri.toString());
+                            if (sessionId) {
+                                generateAndApplyFixes(document, sessionId);
+                            }
+                        }
+                    });
+                } else {
+                    progress.report({ message: '✅ No security issues found!' });
+                    diagnosticsManager.clear(document.uri);
+                    statusBar.setSecure();
+                    
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    vscode.window.showInformationMessage('✅ No security issues found!');
+                }
+            } else if (result.status === 'error') {
+                throw new Error(result.error || 'Scan failed');
+            }
+        } catch (error: any) {
+            statusBar.setError();
+            
+            console.error('[GuardRail AI] Error:', error);
+            
+            if (error.message?.includes('No response')) {
+                vscode.window.showErrorMessage(
+                    '❌ GuardRail AI backend is not running. Please start the server: cd api && npm start',
+                    'Open Settings'
                 ).then(selection => {
-                    if (selection === 'View Issues') {
-                        vscode.commands.executeCommand('workbench.actions.view.problems');
-                    } else if (selection === 'Apply Fixes') {
-                        applyFixes(document, result.patchedCode);
+                    if (selection === 'Open Settings') {
+                        vscode.commands.executeCommand('workbench.action.openSettings', 'guardrailai.apiUrl');
                     }
                 });
             } else {
-                diagnosticsManager.clear(document.uri);
-                statusBar.setSecure();
-                vscode.window.showInformationMessage('✅ No security issues found!');
+                vscode.window.showErrorMessage(`❌ GuardRail AI scan failed: ${error.message}`);
             }
-        } else if (result.status === 'error') {
-            throw new Error(result.error || 'Scan failed');
         }
-    } catch (error: any) {
-        statusBar.setError();
-        
-        if (error.code === 'ECONNREFUSED') {
-            vscode.window.showErrorMessage(
-                'GuardRail AI backend is not running. Please start the API server.',
-                'Open Settings'
-            ).then(selection => {
-                if (selection === 'Open Settings') {
-                    vscode.commands.executeCommand('workbench.action.openSettings', 'guardrailai.apiUrl');
-                }
-            });
-        } else {
-            vscode.window.showErrorMessage(`GuardRail AI scan failed: ${error.message}`);
-        }
-    }
+    });
 }
 
 async function scanWorkspace() {
@@ -252,6 +277,30 @@ async function scanWorkspace() {
                 vscode.commands.executeCommand('workbench.actions.view.problems');
             }
         });
+    });
+}
+
+async function generateAndApplyFixes(document: vscode.TextDocument, sessionId: string) {
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'GuardRail AI',
+        cancellable: false
+    }, async (progress) => {
+        try {
+            progress.report({ message: '🔧 Generating security patches...' });
+            
+            const fixResult = await scanner.generateFix(sessionId);
+            
+            if (fixResult.patch && fixResult.patch.secureCode) {
+                progress.report({ message: '✅ Patches generated!' });
+                await new Promise(resolve => setTimeout(resolve, 500));
+                await applyFixes(document, fixResult.patch.secureCode);
+            } else {
+                vscode.window.showWarningMessage('No fixes available');
+            }
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to generate fixes: ${error.message}`);
+        }
     });
 }
 

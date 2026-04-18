@@ -22,15 +22,15 @@ class SecurityOrchestrator {
     this.sessionManager = new SessionManager();
   }
 
-  async processCode({ sessionId, code, language, filename }) {
+  async processCode({ sessionId, code, language, filename, scanOnly = false }) {
     const startTime = Date.now();
 
     try {
       // Step 1: Store encrypted code in S3
       await this.storage.storeCode(sessionId, code, filename);
 
-      // Step 2: Analyze with Bedrock
-      console.log(`[${sessionId}] Analyzing code with Bedrock...`);
+      // Step 2: Analyze with AI
+      console.log(`[${sessionId}] Analyzing code with AI...`);
       const analysis = await this.bedrock.analyzeCode({
         code,
         language,
@@ -58,71 +58,52 @@ class SecurityOrchestrator {
         };
       }
 
-      // Step 3: Generate remediation strategy
-      console.log(`[${sessionId}] Generating remediation strategy...`);
-      const strategy = await this.remediation.createStrategy(analysis);
+      // Get all vulnerabilities (new format) or single (old format)
+      const allVulns = analysis.all_vulnerabilities || [analysis];
+      const vulnerabilityResults = [];
 
-      // Step 4: Create AWS secret if needed
-      let secretRef = null;
-      if (strategy.requiresSecretStorage) {
-        console.log(`[${sessionId}] Creating AWS secret...`);
-        secretRef = await this.secretManager.createSecret({
-          sessionId,
-          value: analysis.extracted_value,
-          type: analysis.risk_type,
-          filename
+      // Process each vulnerability - just collect info, don't remediate yet
+      for (const vuln of allVulns) {
+        vulnerabilityResults.push({
+          type: vuln.risk_type,
+          severity: vuln.severity,
+          explanation: vuln.explanation,
+          affectedLines: vuln.affected_lines,
+          cwe: this.getCWE(vuln.risk_type),
+          extractedValue: vuln.extracted_value
         });
       }
 
-      // Step 5: Generate secure patch
-      console.log(`[${sessionId}] Generating secure patch...`);
-      const patch = await this.patchGenerator.generatePatch({
-        originalCode: code,
-        analysis,
-        strategy,
-        secretRef,
-        language
-      });
+      // If scan-only mode, return results without generating patches
+      if (scanOnly) {
+        await this.sessionManager.updateSession(sessionId, {
+          status: 'scanned',
+          vulnerabilities_detected: vulnerabilityResults.length
+        });
 
-      // Step 6: Store patch in S3
-      await this.storage.storePatch(sessionId, patch);
+        await this.logger.logScan({
+          sessionId,
+          status: 'scanned',
+          vulnerabilityType: vulnerabilityResults.map(v => v.type).join(', '),
+          severity: this.getHighestSeverity(vulnerabilityResults),
+          language,
+          duration: Date.now() - startTime
+        });
 
-      // Step 7: Update session status to completed
-      await this.sessionManager.updateSession(sessionId, {
-        status: 'completed',
-        vulnerabilities_detected: 1,
-        secret_created: !!secretRef
-      });
+        return {
+          status: 'vulnerable',
+          vulnerabilities: vulnerabilityResults,
+          severity: this.getHighestSeverity(vulnerabilityResults),
+          patch: {
+            available: false,
+            message: 'Click "Apply Fix" to generate patches'
+          },
+          duration: Date.now() - startTime
+        };
+      }
 
-      // Step 8: Log event
-      await this.logger.logScan({
-        sessionId,
-        status: 'vulnerable',
-        vulnerabilityType: analysis.risk_type,
-        severity: analysis.severity,
-        language,
-        secretCreated: !!secretRef,
-        confidence: strategy.confidence,
-        duration: Date.now() - startTime
-      });
-
-      return {
-        status: 'vulnerable',
-        vulnerabilities: [{
-          type: analysis.risk_type,
-          severity: analysis.severity,
-          explanation: analysis.explanation,
-          affectedLines: analysis.affected_lines,
-          cwe: this.getCWE(analysis.risk_type),
-          confidence: strategy.confidence
-        }],
-        severity: analysis.severity,
-        patch: {
-          available: true,
-          secretCreated: !!secretRef
-        },
-        duration: Date.now() - startTime
-      };
+      // Full remediation flow (when user clicks "Apply Fix")
+      return await this.generateRemediation(sessionId, code, language, filename, allVulns, vulnerabilityResults, startTime);
 
     } catch (error) {
       console.error(`[${sessionId}] Orchestration error:`, error);
@@ -137,10 +118,105 @@ class SecurityOrchestrator {
     }
   }
 
+  async generateRemediation(sessionId, code, language, filename, allVulns, vulnerabilityResults, startTime) {
+    try {
+      // Generate remediation strategies and secrets
+      for (let i = 0; i < allVulns.length; i++) {
+        const vuln = allVulns[i];
+        console.log(`[${sessionId}] Generating remediation for ${vuln.risk_type}...`);
+        const strategy = await this.remediation.createStrategy(vuln);
+
+        // Create AWS secret if needed
+        if (strategy.requiresSecretStorage && vuln.extracted_value) {
+          console.log(`[${sessionId}] Creating AWS secret...`);
+          const secretRef = await this.secretManager.createSecret({
+            sessionId,
+            value: vuln.extracted_value,
+            type: vuln.risk_type,
+            filename
+          });
+          vulnerabilityResults[i].secretRef = {
+            name: secretRef.secretName,
+            expiresAt: secretRef.expiresAt
+          };
+          vulnerabilityResults[i].confidence = strategy.confidence;
+        }
+      }
+
+      // Generate secure patch for the first/primary vulnerability
+      console.log(`[${sessionId}] Generating secure patch...`);
+      const primaryVuln = allVulns[0];
+      const primaryStrategy = await this.remediation.createStrategy(primaryVuln);
+      const primarySecretRef = vulnerabilityResults[0].secretRef;
+      
+      const patch = await this.patchGenerator.generatePatch({
+        originalCode: code,
+        analysis: primaryVuln,
+        strategy: primaryStrategy,
+        secretRef: primarySecretRef ? {
+          secretName: primarySecretRef.name,
+          expiresAt: primarySecretRef.expiresAt,
+          retrievalCode: this.secretManager.generateRetrievalCode(primarySecretRef.name)
+        } : null,
+        language
+      });
+
+      // Store patch in S3
+      await this.storage.storePatch(sessionId, patch);
+
+      // Update session status to completed
+      const hasSecrets = vulnerabilityResults.some(v => v.secretRef);
+      await this.sessionManager.updateSession(sessionId, {
+        status: 'completed',
+        vulnerabilities_detected: vulnerabilityResults.length,
+        secret_created: hasSecrets
+      });
+
+      // Log event
+      await this.logger.logScan({
+        sessionId,
+        status: 'vulnerable',
+        vulnerabilityType: vulnerabilityResults.map(v => v.type).join(', '),
+        severity: this.getHighestSeverity(vulnerabilityResults),
+        language,
+        secretCreated: hasSecrets,
+        confidence: vulnerabilityResults[0].confidence,
+        duration: Date.now() - startTime
+      });
+
+      return {
+        status: 'vulnerable',
+        vulnerabilities: vulnerabilityResults,
+        severity: this.getHighestSeverity(vulnerabilityResults),
+        patch: {
+          available: true,
+          secretCreated: hasSecrets
+        },
+        duration: Date.now() - startTime
+      };
+    } catch (error) {
+      console.error(`[${sessionId}] Remediation error:`, error);
+      throw error;
+    }
+  }
+
+  getHighestSeverity(vulnerabilities) {
+    const severityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
+    return vulnerabilities.reduce((highest, v) => {
+      return severityOrder[v.severity] > severityOrder[highest] ? v.severity : highest;
+    }, 'low');
+  }
+
   getCWE(riskType) {
     const cweMap = {
       'hardcoded_secret': 'CWE-798',
       'sql_injection': 'CWE-89',
+      'command_injection': 'CWE-78',
+      'path_traversal': 'CWE-22',
+      'xss': 'CWE-79',
+      'weak_crypto': 'CWE-327',
+      'insecure_random': 'CWE-330',
+      'eval_usage': 'CWE-95',
       'insecure_http': 'CWE-319',
       'unsafe_deserialization': 'CWE-502',
       'permissive_config': 'CWE-732'

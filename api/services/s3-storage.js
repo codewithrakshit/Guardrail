@@ -66,6 +66,37 @@ class S3Storage {
     }
   }
 
+  async getCode(sessionId) {
+    try {
+      // List objects to find the original code file
+      const { ListObjectsV2Command } = require('@aws-sdk/client-s3');
+      const listCommand = new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: `sessions/${sessionId}/original/`
+      });
+
+      const listResponse = await this.client.send(listCommand);
+      
+      if (!listResponse.Contents || listResponse.Contents.length === 0) {
+        return null;
+      }
+
+      const key = listResponse.Contents[0].Key;
+
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key
+      });
+
+      const response = await this.client.send(command);
+      return await response.Body.transformToString();
+
+    } catch (error) {
+      console.error(`[${sessionId}] Code retrieval failed:`, error);
+      return null;
+    }
+  }
+
   async getPatch(sessionId) {
     const key = `sessions/${sessionId}/patch/secure-code.json`;
 

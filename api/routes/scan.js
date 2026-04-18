@@ -35,7 +35,7 @@ const scanSchema = Joi.object({
 
 /**
  * POST /api/scan
- * Submit code for security analysis
+ * Submit code for security analysis (scan-only, no remediation)
  */
 router.post('/', validateInput(scanSchema), async (req, res, next) => {
   try {
@@ -58,13 +58,14 @@ router.post('/', validateInput(scanSchema), async (req, res, next) => {
       codeLength: sanitizedCode.length
     });
 
-    // Start security orchestration
+    // Start security orchestration (SCAN ONLY - no remediation)
     const orchestrator = new SecurityOrchestrator();
     const result = await orchestrator.processCode({
       sessionId,
       code: sanitizedCode,
       language,
-      filename: filename || 'untitled'
+      filename: filename || 'untitled',
+      scanOnly: true  // Only scan, don't generate patches
     });
 
     console.log(`[${sessionId}] Scan complete - Status: ${result.status}`);
