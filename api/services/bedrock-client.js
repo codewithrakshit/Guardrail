@@ -1,55 +1,47 @@
 /**
- * Bedrock Client Wrapper
- * Handles all Amazon Bedrock Nova Lite interactions
+ * AI Client Wrapper
+ * Handles Groq API interactions for security analysis
  */
 
-const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const Groq = require('groq-sdk');
 
 class BedrockClient {
   constructor() {
-    this.client = new BedrockRuntimeClient({ 
-      region: process.env.AWS_REGION || 'us-east-1' 
+    this.client = new Groq({
+      apiKey: process.env.GROQ_API_KEY
     });
-    this.modelId = 'amazon.nova-lite-v1:0';
-    this.maxTokens = parseInt(process.env.BEDROCK_MAX_TOKENS) || 2000;
+    this.model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+    this.maxTokens = parseInt(process.env.GROQ_MAX_TOKENS) || 2000;
   }
 
   async analyzeCode({ code, language, filename }) {
     const prompt = this.buildAnalysisPrompt(code, language, filename);
 
-    const payload = {
-      messages: [{ 
-        role: 'user', 
-        content: [{ text: prompt }] 
-      }],
-      inferenceConfig: {
-        maxTokens: this.maxTokens,
-        temperature: 0.1,
-        topP: 0.9
-      }
-    };
-
     try {
-      const command = new InvokeModelCommand({
-        modelId: this.modelId,
-        contentType: 'application/json',
-        accept: 'application/json',
-        body: JSON.stringify(payload)
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: this.maxTokens,
+        top_p: 0.9
       });
 
-      const response = await this.client.send(command);
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-      const analysisText = responseBody.output.message.content[0].text;
-
+      const analysisText = response.choices[0].message.content;
       return this.parseAnalysisResponse(analysisText);
 
     } catch (error) {
-      console.error('Bedrock analysis error:', error);
+      console.error('Groq analysis error:', error);
       throw new Error(`Security analysis failed: ${error.message}`);
     }
   }
 
+  sanitizeFilename(filename) {
+    // Strip everything except safe path characters to prevent prompt injection
+    return filename.replace(/[^a-zA-Z0-9._\-/]/g, '_').slice(0, 100);
+  }
+
   buildAnalysisPrompt(code, language, filename) {
+    const safeFilename = this.sanitizeFilename(filename);
     return `You are a security analysis engine for GuardRail AI, a production SaaS platform.
 
 CRITICAL SECURITY RULES TO DETECT:
@@ -60,7 +52,7 @@ CRITICAL SECURITY RULES TO DETECT:
 5. Overly permissive access configurations
 
 FILE INFORMATION:
-- Filename: ${filename}
+- Filename: ${safeFilename}
 - Language: ${language}
 - Lines: ${code.split('\n').length}
 
