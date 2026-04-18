@@ -50,11 +50,13 @@ export class GuardRailScanner {
 
     private getTimeout(): number {
         const config = vscode.workspace.getConfiguration('guardrailai');
-        return config.get<number>('timeout', 30000);
+        return config.get<number>('timeout', 60000); // Increased to 60 seconds
     }
 
     async scanCode(code: string, language: string, filename: string): Promise<ScanResult> {
         try {
+            console.log('[GuardRail] Starting scan...');
+            
             // Submit scan request
             const scanResponse = await this.client.post('/api/scan', {
                 code,
@@ -62,11 +64,24 @@ export class GuardRailScanner {
                 filename
             });
 
+            console.log('[GuardRail] Scan response:', scanResponse.data);
+            
+            // Check if we got immediate results (scan-only mode)
+            if (scanResponse.data.vulnerabilities) {
+                return {
+                    sessionId: scanResponse.data.sessionId,
+                    status: 'completed',
+                    vulnerabilities: this.mapVulnerabilities(scanResponse.data.vulnerabilities),
+                    vulnerabilitiesDetected: scanResponse.data.vulnerabilities.length
+                };
+            }
+
             const { sessionId } = scanResponse.data;
 
-            // Poll for results
+            // Poll for results (legacy mode)
             return await this.pollForResults(sessionId);
         } catch (error: any) {
+            console.error('[GuardRail] Scan error:', error);
             if (error.response) {
                 throw new Error(`API Error: ${error.response.data.error || error.message}`);
             } else if (error.request) {
@@ -75,6 +90,18 @@ export class GuardRailScanner {
                 throw error;
             }
         }
+    }
+
+    private mapVulnerabilities(vulns: any[]): Vulnerability[] {
+        return vulns.map(v => ({
+            type: v.type,
+            severity: v.severity,
+            line: v.affectedLines?.[0] || 1,
+            column: 0,
+            message: `${v.severity.toUpperCase()}: ${v.type.replace(/_/g, ' ')}`,
+            description: v.explanation,
+            cwe: v.cwe
+        }));
     }
 
     private async pollForResults(sessionId: string, maxAttempts: number = 30): Promise<ScanResult> {

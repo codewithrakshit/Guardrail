@@ -119,51 +119,52 @@ class SecurityOrchestrator {
   }
 
   async generateRemediation(sessionId, code, language, filename, allVulns, vulnerabilityResults, startTime) {
-    // Generate remediation strategies and secrets
-    for (let i = 0; i < allVulns.length; i++) {
-      const vuln = allVulns[i];
-      console.log(`[${sessionId}] Generating remediation for ${vuln.risk_type}...`);
-      const strategy = await this.remediation.createStrategy(vuln);
+    try {
+      // Generate remediation strategies and secrets
+      for (let i = 0; i < allVulns.length; i++) {
+        const vuln = allVulns[i];
+        console.log(`[${sessionId}] Generating remediation for ${vuln.risk_type}...`);
+        const strategy = await this.remediation.createStrategy(vuln);
 
-      // Create AWS secret if needed
-      if (strategy.requiresSecretStorage && vuln.extracted_value) {
-        console.log(`[${sessionId}] Creating AWS secret...`);
-        const secretRef = await this.secretManager.createSecret({
-          sessionId,
-          value: vuln.extracted_value,
-          type: vuln.risk_type,
-          filename
-        });
-        vulnerabilityResults[i].secretRef = {
-          name: secretRef.secretName,
-          expiresAt: secretRef.expiresAt
-        };
-        vulnerabilityResults[i].confidence = strategy.confidence;
+        // Create AWS secret if needed
+        if (strategy.requiresSecretStorage && vuln.extracted_value) {
+          console.log(`[${sessionId}] Creating AWS secret...`);
+          const secretRef = await this.secretManager.createSecret({
+            sessionId,
+            value: vuln.extracted_value,
+            type: vuln.risk_type,
+            filename
+          });
+          vulnerabilityResults[i].secretRef = {
+            name: secretRef.secretName,
+            expiresAt: secretRef.expiresAt
+          };
+          vulnerabilityResults[i].confidence = strategy.confidence;
+        }
       }
-    }
 
-    // Generate secure patch for the first/primary vulnerability
-    console.log(`[${sessionId}] Generating secure patch...`);
-    const primaryVuln = allVulns[0];
-    const primaryStrategy = await this.remediation.createStrategy(primaryVuln);
-    const primarySecretRef = vulnerabilityResults[0].secretRef;
-    
-    const patch = await this.patchGenerator.generatePatch({
-      originalCode: code,
-      analysis: primaryVuln,
-      strategy: primaryStrategy,
-      secretRef: primarySecretRef ? {
-        secretName: primarySecretRef.name,
-        expiresAt: primarySecretRef.expiresAt,
-        retrievalCode: this.secretManager.generateRetrievalCode(primarySecretRef.name)
-      } : null,
-      language
-    });
+      // Generate secure patch for the first/primary vulnerability
+      console.log(`[${sessionId}] Generating secure patch...`);
+      const primaryVuln = allVulns[0];
+      const primaryStrategy = await this.remediation.createStrategy(primaryVuln);
+      const primarySecretRef = vulnerabilityResults[0].secretRef;
+      
+      const patch = await this.patchGenerator.generatePatch({
+        originalCode: code,
+        analysis: primaryVuln,
+        strategy: primaryStrategy,
+        secretRef: primarySecretRef ? {
+          secretName: primarySecretRef.name,
+          expiresAt: primarySecretRef.expiresAt,
+          retrievalCode: this.secretManager.generateRetrievalCode(primarySecretRef.name)
+        } : null,
+        language
+      });
 
-      // Step 6: Store patch in S3
+      // Store patch in S3
       await this.storage.storePatch(sessionId, patch);
 
-      // Step 7: Update session status to completed
+      // Update session status to completed
       const hasSecrets = vulnerabilityResults.some(v => v.secretRef);
       await this.sessionManager.updateSession(sessionId, {
         status: 'completed',
@@ -171,7 +172,7 @@ class SecurityOrchestrator {
         secret_created: hasSecrets
       });
 
-      // Step 8: Log event
+      // Log event
       await this.logger.logScan({
         sessionId,
         status: 'vulnerable',
@@ -193,16 +194,8 @@ class SecurityOrchestrator {
         },
         duration: Date.now() - startTime
       };
-
     } catch (error) {
-      console.error(`[${sessionId}] Orchestration error:`, error);
-      
-      await this.logger.logError({
-        sessionId,
-        error: error.message,
-        stack: error.stack
-      });
-
+      console.error(`[${sessionId}] Remediation error:`, error);
       throw error;
     }
   }
