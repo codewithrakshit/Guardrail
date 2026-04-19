@@ -8,3 +8,5 @@ coverage/
 .vscode/
 *.swp
 *.swo
+web/.next/
+frontend/node_modules/
