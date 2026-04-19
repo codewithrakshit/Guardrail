@@ -6,6 +6,7 @@
 const { DynamoDBClient, CreateTableCommand } = require('@aws-sdk/client-dynamodb');
 const { CloudWatchLogsClient, CreateLogGroupCommand } = require('@aws-sdk/client-cloudwatch-logs');
 
+
 async function deployInfrastructure() {
   console.log('🚀 Deploying GuardRail AI infrastructure...\n');
 
@@ -35,6 +36,14 @@ async function deployInfrastructure() {
   // Create CloudWatch Log Group
   console.log('📝 Creating CloudWatch log group...');
   const cloudwatch = new CloudWatchLogsClient({ region });
+
+  const { PutRetentionPolicyCommand } = require('@aws-sdk/client-cloudwatch-logs');
+
+await cloudwatch.send(new PutRetentionPolicyCommand({
+  logGroupName: '/guardrail-ai/detections',
+  retentionInDays: 30
+}));
+
   
   try {
     await cloudwatch.send(new CreateLogGroupCommand({
