@@ -448,19 +448,23 @@ function SectionH({ label, h2, sub, maxW = 520 }) {
 
 // ─── NAV ───────────────────────────────────────────────────────────────────
 function Nav({ theme, onToggle }) {
-  const links = ["Features", "How It Works", "Pricing", "Docs", "GitHub"];
+  const links = [
+    { name: "Features", href: "#features" },
+    { name: "How It Works", href: "#how-it-works" },
+    { name: "Pricing", href: "#pricing" },
+    { name: "GitHub", href: "https://github.com/rakshitbharat/guardrail-ai" }
+  ];
   return (
     <nav className="gr-nav">
-      <button className="gr-logo">
+      <a href="/" className="gr-logo" style={{ textDecoration: 'none' }}>
         <div className="gr-shield"><ShieldIcon /></div>
         GuardRail AI
-      </button>
+      </a>
       <ul className="gr-nav-links">
-        {links.map(l => <li key={l}><a href={`#${l.toLowerCase().replace(/ /g,"-")}`}>{l}</a></li>)}
+        {links.map(l => <li key={l.name}><a href={l.href} target={l.href.startsWith('http') ? '_blank' : undefined} rel={l.href.startsWith('http') ? 'noopener noreferrer' : undefined}>{l.name}</a></li>)}
       </ul>
       <div className="gr-nav-r">
-        <button className="btn-ghost">Login</button>
-        <button className="btn-p sm">Get Started</button>
+        <a href="/guardrail-ai.vsix" download className="btn-p sm" style={{ textDecoration: 'none' }}>Download Extension</a>
         <button className="btn-icon" onClick={onToggle} aria-label="Toggle theme">
           {theme === "dark" ? "☀" : "☽"}
         </button>
@@ -482,8 +486,8 @@ function Hero() {
       </Reveal>
       <Reveal delay={240}>
         <div className="hero-ctas">
-          <button className="btn-p">Get Started Free <ArrowIcon /></button>
-          <button className="btn-o"><GithubIcon /> View on GitHub</button>
+          <a href="/guardrail-ai.vsix" download className="btn-p" style={{ textDecoration: 'none' }}>Download Extension <ArrowIcon /></a>
+          <button className="btn-o" onClick={() => window.open('https://github.com/rakshitbharat/guardrail-ai', '_blank')}><GithubIcon /> View on GitHub</button>
         </div>
       </Reveal>
       <Reveal delay={320}>
@@ -515,10 +519,10 @@ function Hero() {
 // ─── STATS ─────────────────────────────────────────────────────────────────
 function StatsBar() {
   const stats = [
-    { n: "50+", l: "Vulnerability types detected" },
-    { n: "<10s", l: "End-to-end remediation" },
-    { n: "<5%", l: "False positive rate" },
-    { n: "78%", l: "Gross margin" },
+    { n: "12+", l: "Vulnerability types detected" },
+    { n: "<10s", l: "Average scan time" },
+    { n: "100%", l: "Automated remediation" },
+    { n: "24h", l: "Secret TTL cleanup" },
   ];
   return (
     <div style={{ maxWidth: 920, margin: "0 auto", padding: "0 2rem" }}>
@@ -578,11 +582,11 @@ function Problem() {
 // ─── SOLUTION ──────────────────────────────────────────────────────────────
 function Solution() {
   const checks = [
-    { bold: "Detects", rest: " 50+ vulnerability types using AI (Groq Llama 3.3 70B) — mapped to CWE IDs for compliance" },
+    { bold: "Detects", rest: " 12+ vulnerability types using AI (Groq Llama 3.3 70B) — hardcoded secrets, SQL injection, XSS, command injection, and more" },
     { bold: "Remediates", rest: " by generating production-ready patches automatically — context-aware, not just regex" },
     { bold: "Provisions", rest: " AWS Secrets Manager entries with least-privilege IAM policies automatically" },
-    { bold: "Orchestrates", rest: " responses across GitHub, Slack, and email based on severity — no manual routing" },
-    { bold: "Integrates", rest: " into VS Code, GitHub Actions, and CLI — no workflow changes required" },
+    { bold: "Logs", rest: " everything to CloudWatch and DynamoDB for complete audit trail and compliance" },
+    { bold: "Integrates", rest: " into VS Code (Kiro, Cursor, Windsurf), GitHub Actions, and Web UI — no workflow changes required" },
   ];
   const rows = [
     ["Response type", "Firewall rules, IP blocking", "Code patches, secret rotation"],
@@ -628,12 +632,12 @@ function Solution() {
 // ─── FEATURES ──────────────────────────────────────────────────────────────
 function Features() {
   const feats = [
-    { ico: "⚡", title: "Multi-Channel Ingest", desc: "Trigger scans from any entry point in your workflow with zero friction.", extra: <div className="ch-pills">{["VS Code","GitHub Webhook","CLI","Web UI"].map(p => <span key={p} className="ch-pill"><span className="ch-dot"/>{p}</span>)}</div> },
-    { ico: "🧠", title: "AI-Powered Detection", desc: "Groq Llama 3.3 70B analyzes code for 50+ vulnerability types — SQL injection, XSS, SSRF, hardcoded secrets, weak cryptography, and more. CWE-mapped for compliance." },
-    { ico: "🔧", title: "Autonomous Remediation", desc: "Context-aware patch generation that preserves your code logic and style. No placeholders — production-ready output every time." },
+    { ico: "⚡", title: "Multi-Channel Ingest", desc: "Trigger scans from any entry point in your workflow with zero friction.", extra: <div className="ch-pills">{["VS Code","Kiro","Cursor","Windsurf","Web UI"].map(p => <span key={p} className="ch-pill"><span className="ch-dot"/>{p}</span>)}</div> },
+    { ico: "🧠", title: "AI-Powered Detection", desc: "Groq Llama 3.3 70B analyzes code for 12+ vulnerability types — SQL injection, XSS, command injection, hardcoded secrets, weak cryptography, and more. CWE-mapped for compliance." },
+    { ico: "🔧", title: "Two-Phase Workflow", desc: "Fast scan-only mode detects vulnerabilities in seconds. Generate fixes on-demand when you need them. No wasted compute." },
     { ico: "☁", title: "AWS Secret Provisioning", desc: "Auto-creates secrets in AWS Secrets Manager, generates least-privilege IAM policies, and provides retrieval snippets. 24h TTL with auto-cleanup." },
-    { ico: "🔔", title: "SOAR Response Actions", desc: "Severity-based routing: block GitHub PRs, send Slack alerts, email reports. Critical findings fail CI automatically." },
-    { ico: "📋", title: "Audit Trail", desc: "CloudWatch structured logs, DynamoDB scan history, and OWASP/CWE-mapped reports. Compliance-ready from day one." },
+    { ico: "🔔", title: "Real-Time Logs Panel", desc: "VS Code extension includes live logs panel showing backend operations in real-time. See exactly what's happening during scans." },
+    { ico: "📋", title: "Audit Trail", desc: "CloudWatch structured logs, DynamoDB scan history, and CWE-mapped reports. In-memory cache for instant log retrieval." },
   ];
   return (
     <section id="features" style={{ maxWidth: 920, margin: "0 auto", padding: "5rem 2rem" }}>
@@ -655,9 +659,9 @@ function Features() {
 // ─── HOW IT WORKS ──────────────────────────────────────────────────────────
 function HowItWorks() {
   const steps = [
-    { n: "01", title: "Detect", desc: "Code enters via VS Code, GitHub webhook, CLI, or Web UI. Groq AI scans for 50+ vulnerability types and assigns severity with CWE mapping.", tags: ["Llama 3.3 70B","CWE mapped","3–5s"] },
-    { n: "02", title: "Remediate", desc: "The patch engine generates context-aware code fixes and provisions AWS secrets with least-privilege IAM policies. Session-isolated with 24h TTL.", tags: ["Patch gen","AWS Secrets","2–3s"] },
-    { n: "03", title: "Orchestrate", desc: "GitHub PR status checks, inline comments, Slack alerts, and email reports are dispatched based on severity. Critical findings block the merge.", tags: ["GitHub","Slack","SES"] },
+    { n: "01", title: "Detect", desc: "Code enters via VS Code extension or Web UI. Groq AI scans for 12+ vulnerability types and assigns severity with CWE mapping. Fast scan-only mode.", tags: ["Llama 3.3 70B","CWE mapped","<5s"] },
+    { n: "02", title: "Remediate", desc: "On-demand patch generation creates context-aware code fixes and provisions AWS secrets with least-privilege IAM policies. Session-isolated with 24h TTL.", tags: ["Patch gen","AWS Secrets","2–3s"] },
+    { n: "03", title: "Monitor", desc: "Real-time logs panel in VS Code shows all backend operations. CloudWatch and DynamoDB store complete audit trail for compliance.", tags: ["CloudWatch","DynamoDB","Real-time"] },
   ];
   return (
     <section id="how-it-works" style={{ maxWidth: 920, margin: "0 auto", padding: "5rem 2rem" }}>
@@ -763,10 +767,10 @@ function SeverityTable() {
 // ─── TECH STACK ────────────────────────────────────────────────────────────
 function TechStack() {
   const cols = [
-    { title: "Backend",     tags: ["Node.js + Express","Groq API","Llama 3.3 70B","Helmet","rate-limit","Joi"] },
-    { title: "AWS Services",tags: ["Secrets Manager","DynamoDB","S3","CloudWatch","SES","EC2"] },
-    { title: "Frontend",    tags: ["Next.js 14","React 18","TypeScript","Tailwind CSS","SSE","Axios"] },
-    { title: "IDE + CI/CD", tags: ["VS Code Ext.","GitHub Actions","Cursor","Windsurf","HMAC-SHA256"] },
+    { title: "Backend",     tags: ["Node.js + Express","Groq API","Llama 3.3 70B","Helmet","rate-limit","PM2"] },
+    { title: "AWS Services",tags: ["Secrets Manager","DynamoDB","S3","CloudWatch","EC2 (us-west-2)"] },
+    { title: "Frontend",    tags: ["React 18","Vite","CSS-in-JS","Intersection Observer"] },
+    { title: "IDE Extension", tags: ["VS Code API","Kiro","Cursor","Windsurf","TreeView Logs"] },
   ];
   return (
     <section style={{ maxWidth: 920, margin: "0 auto", padding: "5rem 2rem" }}>
@@ -797,7 +801,7 @@ function Pricing() {
         { y: false, t: "Managed hosting" },
         { y: false, t: "Priority support" },
       ],
-      cta: "Get the code", primary: false, featured: false
+      cta: "Download Extension", primary: false, featured: false, link: "/guardrail-ai.vsix"
     },
     {
       label: "Pro", price: "15", per: "/ dev / month",
@@ -810,7 +814,7 @@ function Pricing() {
         { y: true, t: "Audit log export" },
         { y: true, t: "Slack + email alerts" },
       ],
-      cta: "Start free trial", primary: true, featured: true
+      cta: "Download Extension", primary: true, featured: true, link: "/guardrail-ai.vsix"
     },
     {
       label: "Enterprise", price: null, per: null,
@@ -823,7 +827,7 @@ function Pricing() {
         { y: true, t: "SLA & dedicated support" },
         { y: true, t: "Compliance reports" },
       ],
-      cta: "Contact sales", primary: false, featured: false
+      cta: "Contact Us", primary: false, featured: false, link: "mailto:rakshit@guardrail.ai"
     }
   ];
   return (
@@ -848,8 +852,8 @@ function Pricing() {
               </ul>
               <div className="price-cta">
                 {p.primary
-                  ? <button className="btn-p btn-full">{p.cta}</button>
-                  : <button className="btn-o btn-full">{p.cta}</button>}
+                  ? <a href={p.link} download={p.link.endsWith('.vsix') ? 'guardrail-ai.vsix' : undefined} className="btn-p btn-full" style={{ textDecoration: 'none' }}>{p.cta}</a>
+                  : <a href={p.link} download={p.link.endsWith('.vsix') ? 'guardrail-ai.vsix' : undefined} className="btn-o btn-full" style={{ textDecoration: 'none' }}>{p.cta}</a>}
               </div>
             </div>
           </Reveal>
@@ -869,8 +873,8 @@ function OssCta() {
           <h2>Proudly <em>Open Source</em></h2>
           <p>GuardRail is open source and built on open source infrastructure. The full code is available on GitHub — deploy it yourself or use our managed cloud.</p>
           <div className="oss-ctas">
-            <button className="btn-p"><GithubIcon /> Star on GitHub</button>
-            <button className="btn-o">Read the docs</button>
+            <a href="/guardrail-ai.vsix" download className="btn-p" style={{ textDecoration: 'none' }}>Download Extension</a>
+            <button className="btn-o" onClick={() => window.open('https://github.com/rakshitbharat/guardrail-ai', '_blank')}><GithubIcon /> Star on GitHub</button>
           </div>
           <div className="oss-tags">{tags.map(t => <span key={t} className="oss-tag">{t}</span>)}</div>
         </div>
@@ -894,8 +898,13 @@ function Footer() {
           </div>
           GuardRail AI
         </button>
-        <div className="footer-links">{links.map(l => <a key={l} href="#">{l}</a>)}</div>
-        <p className="footer-meta">© 2026 GuardRail AI · MIT License</p>
+        <div className="footer-links">
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="https://github.com/rakshitbharat/guardrail-ai" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="http://98.93.184.65:3001" target="_blank" rel="noopener noreferrer">Demo</a>
+        </div>
+        <p className="footer-meta">© 2025 GuardRail AI · Built by Rakshit & Karan</p>
       </div>
     </footer>
   );
