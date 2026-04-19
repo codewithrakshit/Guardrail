@@ -1,0 +1,82 @@
+#!/bin/bash
+# GuardRail AI Pre-Commit Hook
+# Scans staged files for security vulnerabilities before allowing commit
+
+GUARDRAIL_API_URL="${GUARDRAIL_API_URL:-http://98.93.184.65:3001}"
+
+echo "🛡️  GuardRail AI — Scanning staged files..."
+
+# Get staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(js|ts|py|java|go|rb|php)$' | grep -v -E '^test-.*\.js$|^demo/|^tests/')
+
+if [ -z "$STAGED_FILES" ]; then
+  echo "✅ No scannable files staged"
+  exit 0
+fi
+
+CRITICAL=0
+HIGH=0
+BLOCKED_FILES=""
+
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  [ ! -f "$file" ] && continue
+
+  # Determine language
+  EXT="${file##*.}"
+  case "$EXT" in
+    js|ts) LANG="javascript" ;;
+    py)    LANG="python" ;;
+    java)  LANG="java" ;;
+    go)    LANG="go" ;;
+    rb)    LANG="ruby" ;;
+    php)   LANG="php" ;;
+    *)     LANG="javascript" ;;
+  esac
+
+  echo "  Scanning $file..."
+
+  # Read file content
+  CODE=$(cat "$file")
+
+  # Call GuardRail API
+  RESPONSE=$(curl -s -X POST "$GUARDRAIL_API_URL/api/scan" \
+    -H "Content-Type: application/json" \
+    -d "{\"code\": $(echo "$CODE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'), \"language\": \"$LANG\", \"filename\": \"$file\"}" \
+    --max-time 30 2>/dev/null)
+
+  # Parse response
+  STATUS=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status","error"))' 2>/dev/null || echo "error")
+  SEVERITY=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("severity","none"))' 2>/dev/null || echo "none")
+
+  if [ "$STATUS" = "vulnerable" ]; then
+    VULN_TYPE=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("vulnerabilities",[]); print(v[0].get("type","unknown") if v else "unknown")' 2>/dev/null || echo "unknown")
+    
+    if [ "$SEVERITY" = "critical" ] || [ "$SEVERITY" = "high" ]; then
+      echo "    ❌ ${SEVERITY^^}: $VULN_TYPE"
+      BLOCKED_FILES="$BLOCKED_FILES\n  - $file (${SEVERITY^^}: $VULN_TYPE)"
+      [ "$SEVERITY" = "critical" ] && CRITICAL=$((CRITICAL+1))
+      [ "$SEVERITY" = "high" ] && HIGH=$((HIGH+1))
+    else
+      echo "    ⚠️  ${SEVERITY^^}: $VULN_TYPE (allowed)"
+    fi
+  elif [ "$STATUS" = "error" ]; then
+    echo "    ⚠️  Scan failed (allowing commit)"
+  else
+    echo "    ✅ Clean"
+  fi
+done <<< "$STAGED_FILES"
+
+# Block commit if critical/high issues found
+if [ $CRITICAL -gt 0 ] || [ $HIGH -gt 0 ]; then
+  echo ""
+  echo "❌ COMMIT BLOCKED — Security issues found:"
+  echo -e "$BLOCKED_FILES"
+  echo ""
+  echo "Fix the issues or run: git commit --no-verify (not recommended)"
+  exit 1
+fi
+
+echo ""
+echo "✅ All files passed security scan"
+exit 0
