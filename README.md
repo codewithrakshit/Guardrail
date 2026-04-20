@@ -1,227 +1,105 @@
 # GuardRail AI
 
-Autonomous security remediation platform powered by AI. Detect vulnerabilities, generate production-ready patches, and provision AWS secrets automatically — available as a web platform and IDE extension.
+Developer-first SOAR platform. Detects vulnerabilities in code, generates production-ready patches, provisions AWS secrets, and orchestrates responses across GitHub, Slack, and CI/CD — automatically.
 
-## 🚀 What is GuardRail AI?
+## What it does
 
-GuardRail AI is an AI-powered security platform that:
-- **Detects** 50+ vulnerability types in real-time
-- **Generates** production-ready security patches automatically
-- **Provisions** AWS secrets with proper IAM policies
-- **Integrates** directly into your IDE or web workflow
-
-## 🎯 Two Ways to Use
-
-### 1. **Web Platform** (Current Implementation)
-- Submit code via web interface
-- View results in dashboard
-- Download patched code
-- Perfect for: Code reviews, security audits, batch scanning
-
-### 2. **IDE Extension** (New! 🎉)
-- One-click scanning with `Ctrl+Shift+G`
-- Inline diagnostics (red squiggly lines)
-- Quick fix actions (lightbulb 💡)
-- Auto-scan on save
-- Perfect for: Real-time development, shift-left security
-
-**✅ Works on all VS Code-based IDEs:**
-- Kiro, Cursor, Windsurf (Anity Gravity), VS Code, VS Codium
-
-**👉 See [UNIVERSAL-IDE-COMPATIBILITY.md](UNIVERSAL-IDE-COMPATIBILITY.md) for details**
+- Detects 50+ vulnerability types (CWE mapped) using Groq AI (Llama 3.3 70B)
+- Generates production-ready patches automatically
+- Provisions AWS Secrets Manager entries with least-privilege IAM policies
+- Posts PR status checks and inline comments on vulnerable lines
+- Blocks CI/CD pipeline on critical/high findings
+- Sends email (AWS SES) and Slack alerts based on severity
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Frontend Layer                                │
-│  ┌──────────────────┐         ┌──────────────────┐             │
-│  │  Web Interface   │         │  IDE Extension   │             │
-│  │  (Next.js 14)    │         │  (VS Code, etc)  │             │
-│  └────────┬─────────┘         └────────┬─────────┘             │
-└───────────┼──────────────────────────────┼───────────────────────┘
-            │                              │
-            └──────────────┬───────────────┘
-                           │ HTTPS
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Backend API Layer                             │
-│  POST /api/scan  •  GET /api/result/{id}  •  GET /api/logs     │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    AI & Security Layer                           │
-│  Amazon Bedrock Nova Lite → Security Analysis → Patch Generator │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    AWS Infrastructure                            │
-│  Secrets Manager  •  DynamoDB  •  S3  •  CloudWatch             │
-└─────────────────────────────────────────────────────────────────┘
+Ingest (IDE / GitHub Webhook / CLI / Web UI)
+        │
+        ▼
+Detection Engine (Groq AI — vulnerability analysis, CWE mapping)
+        │
+        ▼
+Remediation Engine (patch generation, AWS secret provisioning)
+        │
+        ▼
+Orchestration (GitHub PR status, inline comments, email, Slack, CI/CD)
 ```
 
-## 🛠️ Components
+## Stack
 
-### Backend Services
-- **Security Orchestrator**: Coordinates the entire remediation workflow
-- **Bedrock Client**: AI-powered vulnerability detection
-- **Patch Generator**: Creates production-ready fixes
-- **Secret Lifecycle Manager**: AWS Secrets Manager integration with 24h TTL
-- **Session Manager**: Isolated per-session resources
-- **Event Logger**: Complete audit trail (DynamoDB + CloudWatch)
+- **API:** Node.js + Express, deployed on AWS EC2
+- **AI:** Groq API (Llama 3.3 70B Versatile)
+- **AWS:** Secrets Manager, DynamoDB, S3, CloudWatch, SES
+- **Frontend:** Next.js 14 + TypeScript + Tailwind
+- **IDE Extension:** VS Code (works on Cursor, Windsurf too)
+- **CI/CD:** GitHub Actions
 
-### Frontend
-- **Web Platform**: Next.js 14 with TypeScript
-- **IDE Extension**: VS Code extension (template for other IDEs)
+## Ingest channels
 
-## 📦 Quick Start
+| Channel | Description |
+|---------|-------------|
+| VS Code extension | Scan with `Ctrl+Shift+G`, inline diagnostics, quick-fix |
+| GitHub webhook | Auto-scan on PR open/update, post status checks |
+| GitHub Actions | Block merge on critical/high findings |
+| Web UI | Paste or upload code for instant analysis |
+| CLI | `node cli/index.js scan <file>` |
 
-### Web Platform
+## Quick Start
+
+See `RUN-THIS.md` for setup instructions.
+
+**API** runs on EC2. Frontend runs locally:
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/yourusername/guardrail-ai
-cd guardrail-ai
-
-# 2. Install dependencies
-npm install
-cd api && npm install
-cd ../web && npm install
-
-# 3. Configure AWS credentials
-cp api/.env.example api/.env
-# Edit api/.env with your AWS credentials
-
-# 4. Start backend
-cd api
-npm start  # Runs on http://localhost:3001
-
-# 5. Start frontend (in new terminal)
 cd web
-npm run dev  # Runs on http://localhost:3000
+npm install
+npm run dev
 ```
 
-### IDE Extension (VS Code, Kiro, Cursor, Windsurf)
+Set `NEXT_PUBLIC_API_URL` in `web/.env.local` to your EC2 instance URL.
 
-```bash
-# 1. Install extension
-cd extensions/vscode
-./install-kiro.sh  # For Kiro
-# or
-./install.sh       # For VS Code/Cursor/Windsurf
-
-# 2. Start backend (if not already running)
-cd ../../api
-npm start
-
-# 3. Open your IDE and press Ctrl+Shift+G to scan!
+**VS Code extension** — install from `extensions/vscode/guardrail-ai-1.0.1.vsix`:
+```
+Extensions → ... → Install from VSIX
 ```
 
-**Full IDE extension guide**: [UNIVERSAL-IDE-COMPATIBILITY.md](UNIVERSAL-IDE-COMPATIBILITY.md)
+## CI/CD Pipeline
 
-## 🎯 Features
+GitHub Actions workflow at `.github/workflows/guardrail.yml` triggers on every PR.
 
-### Security Detection
-- ✅ Hardcoded secrets & API keys
-- ✅ SQL injection
-- ✅ Cross-site scripting (XSS)
-- ✅ Path traversal
-- ✅ Insecure cryptography
-- ✅ Command injection
-- ✅ 50+ vulnerability types
+- Scans changed files against the GuardRail API
+- Fails the workflow on critical/high findings
+- Posts a PR comment with findings and patch links
+- On merge to main, auto-deploys to EC2
 
-### Automated Remediation
-- ✅ Production-ready patches
-- ✅ AWS Secrets Manager provisioning
-- ✅ Least-privilege IAM policies
-- ✅ Environment isolation
-- ✅ 24-hour TTL cleanup
+Required GitHub secret: `GUARDRAIL_API_URL`
 
-### Multi-Language Support
-- JavaScript / TypeScript
-- Python
-- Java
-- Go
-- Ruby
-- PHP
+## Response actions by severity
 
-## 🔒 Security Policies
+| Severity | PR blocked | Email | Slack |
+|----------|-----------|-------|-------|
+| Critical | Yes | Yes | Yes |
+| High | Yes | Yes | No |
+| Medium | Comment only | No | No |
+| Low | No | No | No |
 
-- Zero hardcoded secrets
-- No SQL injection patterns
-- Secure credential storage only
-- Least-privilege access enforcement
-- Session isolation per scan
-- Automatic resource cleanup
+## Vulnerability coverage
 
-## 📚 Documentation
+Hardcoded secrets, SQL injection, command injection, XSS, path traversal, SSRF, insecure cryptography, authentication bypass, authorization flaws, and 40+ more — all mapped to CWE IDs.
 
-- **[EXTENSION-SUMMARY.md](EXTENSION-SUMMARY.md)** - IDE extension overview
-- **[IDE-EXTENSION-GUIDE.md](IDE-EXTENSION-GUIDE.md)** - Complete IDE integration guide
-- **[PLATFORM-OVERVIEW.md](PLATFORM-OVERVIEW.md)** - Platform architecture
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Deployment instructions
-- **[QUICK-START.md](QUICK-START.md)** - Getting started guide
+## Languages supported
 
-## 🎬 Demo
+JavaScript, TypeScript, Python, Java, Go, Ruby, PHP
 
-### Web Platform
-```bash
-npm run demo
-```
+## AWS services
 
-### IDE Extension
-1. Open VS Code
-2. Create a file with vulnerable code:
-```javascript
-const apiKey = 'sk-1234567890abcdef';
-```
-3. Press `Ctrl+Shift+G`
-4. See red squiggly line appear
-5. Click lightbulb 💡 → "Apply GuardRail AI Fix"
-6. Code is automatically secured! ✅
+- **Secrets Manager** — auto-provisions secrets, 24h TTL cleanup
+- **DynamoDB** — audit trail of all scans and findings
+- **S3** — session storage
+- **CloudWatch** — structured logs, 30-day retention
+- **SES** — email notifications
 
-## 🧪 Testing
+## License
 
-```bash
-# Run all tests
-npm test
-
-# Run specific test suites
-npm run test:unit
-npm run test:integration
-npm run test:demo
-```
-
-## 🚀 Deployment
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
-
-Quick deploy:
-```bash
-npm run deploy
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Areas we need help:
-- Additional IDE support (JetBrains, Sublime, Vim, Emacs)
-- More vulnerability detection patterns
-- Performance optimizations
-- Documentation improvements
-
-## 📄 License
-
-MIT License - See LICENSE file for details
-
-## 🙏 Acknowledgments
-
-- Amazon Bedrock Nova Lite for AI-powered analysis
-- AWS for cloud infrastructure
-- VS Code Extension API
-- Open source security community
-
----
-
-**Made with ❤️ for secure coding**
+MIT
