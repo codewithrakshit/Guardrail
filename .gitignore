@@ -8,5 +8,7 @@ coverage/
 .vscode/
 *.swp
 *.swo
+.kiro/
+.amazonq/
 web/.next/
 frontend/node_modules/

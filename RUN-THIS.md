@@ -1,67 +1,60 @@
-# 🎯 READY TO TEST — Run These Commands
+# GuardRail AI — Quick Start
 
-## Terminal 1: Backend (REQUIRED)
+## API Server
+Running on EC2. Set your instance IP in environment variables.
+
+Health check:
 ```bash
-cd "/Users/rakshit/Desktop/Workspace/GuardRail AI/GuardRail MVP"
-./start-backend.sh
+curl http://<EC2_IP>:3001/health
 ```
-**Leave this running** — you'll see live API logs
 
 ---
 
-## Terminal 2: Frontend (OPTIONAL — only if you want web UI)
+## Web UI (Frontend)
+Run locally:
 ```bash
-cd "/Users/rakshit/Desktop/Workspace/GuardRail AI/GuardRail MVP"
-./start-frontend.sh
+cd web
+npm install
+npm run dev
 ```
-**Leave this running** — web UI at http://localhost:3000
+Opens at `http://localhost:3000`
+
+Set API URL in `web/.env.local`:
+```
+NEXT_PUBLIC_API_URL=http://98.93.184.65:3001
+```
 
 ---
 
-## Terminal 3: Quick Test
+## VS Code Extension
+Install from `extensions/vscode/guardrail-ai-1.0.1.vsix`:
+```
+VS Code → Extensions → ... → Install from VSIX
+```
+Scan shortcut: `Ctrl+Shift+G`
+
+---
+
+## CLI
 ```bash
-cd "/Users/rakshit/Desktop/Workspace/GuardRail AI/GuardRail MVP"
-./test-api.sh
+cd cli
+npm install
+node index.js scan <file>
 ```
-This verifies the backend is working.
 
 ---
 
-## Then Test in Kiro IDE:
+## CI/CD Pipeline
+GitHub Actions workflow at `.github/workflows/guardrail.yml`
 
-1. Open Kiro
-2. Open file: `test-vulnerable.js`
-3. Press `Cmd+Shift+G`
-4. Wait 3-5 seconds
-5. Red squiggly lines appear
-6. Click lightbulb 💡 → "Apply Fix"
-7. Review diff → Click "Apply Fixes"
-8. Done! ✅
+Triggers on every PR — scans changed files, blocks merge on critical/high findings.
+
+Required GitHub secret: `GUARDRAIL_API_URL=http://<EC2_IP>:3001`
 
 ---
 
-## What's Already Done:
-
-✅ Extension installed in Kiro  
-✅ Backend configured with AWS credentials  
-✅ All security fixes applied  
-✅ GitHub webhook route built  
-✅ Notifier service built (email + Slack)  
-✅ GitHub Actions CI workflow built  
-✅ CLI tool built  
-✅ Test files created  
-
----
-
-## Files You Need to Run:
-
-**Backend:** `./start-backend.sh`  
-**Frontend:** `./start-frontend.sh` (optional)  
-**Test:** `./test-api.sh`  
-
-That's it. Everything else is ready.
-
----
-
-## Full Testing Guide:
-See `TESTING-GUIDE.md` for detailed instructions.
+## What's Running
+- API: EC2 instance on port <EC2_IP>
+- GitHub webhook: configured on repo
+- Notifications: AWS SES + Slack
+- Audit logs: DynamoDB + CloudWatch
