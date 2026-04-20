@@ -76,13 +76,10 @@ jobs:
             esac
 
             CODE=$(cat "$file")
-            echo "DEBUG: Scanning $file"
-            echo "DEBUG: Code content: $CODE"
             RESPONSE=$(curl -s -X POST "$GUARDRAIL_API_URL/api/scan" \
               -H "Content-Type: application/json" \
               -d "{\"code\": $(echo "$CODE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'), \"language\": \"$LANG\", \"filename\": \"$file\"}" \
               --max-time 60)
-            echo "DEBUG: API Response: $RESPONSE"
 
             STATUS=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status","error"))' 2>/dev/null || echo "error")
             SEVERITY=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("severity","none"))' 2>/dev/null || echo "none")
