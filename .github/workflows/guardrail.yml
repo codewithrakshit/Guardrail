@@ -47,7 +47,7 @@ jobs:
       - name: Run GuardRail AI scan
         id: scan
         env:
-          GUARDRAIL_API_URL: ${{ secrets.GUARDRAIL_API_URL || 'http://localhost:3001' }}
+          GUARDRAIL_API_URL: ${{ secrets.GUARDRAIL_API_URL || 'http://98.93.184.65:3001' }}
         run: |
           FILES="${{ steps.changed.outputs.files }}"
           if [ -z "$FILES" ]; then

@@ -10,3 +10,5 @@ coverage/
 *.swo
 .kiro/
 .amazonq/
+web/.next/
+frontend/node_modules/
