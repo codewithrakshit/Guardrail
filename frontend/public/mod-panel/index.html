@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GuardRail - Mod Security Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      --bg: #09090b; --surface: #111113; --surface2: #18181b;
+      --border: rgba(255,255,255,0.07);
+      --text: #fafafa; --muted: #a1a1aa; --subtle: #52525b;
+      --green: #4ade80; --red: #f87171; --amber: #fbbf24; --blue: #60a5fa;
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', sans-serif; font-size: 14px; line-height: 1.6;
+      min-height: 100vh;
+    }
+    .container { max-width: 1000px; margin: 0 auto; padding: 2rem; }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);
+      margin-bottom: 2rem;
+    }
+    .logo {
+      font-weight: 600; font-size: 1.1rem;
+      display: flex; align-items: center; gap: .5rem;
+    }
+    .logo .shield {
+      width: 20px; height: 20px; border-radius: 4px;
+      background: var(--green); display: flex; align-items: center;
+      justify-content: center; font-size: 10px;
+    }
+    .badge {
+      font-size: .75rem; font-weight: 500; padding: .25rem .75rem;
+      border-radius: 100px; display: inline-flex; align-items: center; gap: .4rem;
+    }
+    .badge-safe { background: rgba(74,222,128,0.10); color: var(--green); border: 1px solid rgba(74,222,128,0.18); }
+    .badge-crit { background: rgba(248,113,113,0.10); color: var(--red); border: 1px solid rgba(248,113,113,0.18); }
+    .badge-warn { background: rgba(251,191,36,0.10); color: var(--amber); border: 1px solid rgba(251,191,36,0.18); }
+    .badge-info { background: rgba(96,165,250,0.10); color: var(--blue); border: 1px solid rgba(96,165,250,0.18); }
+    #status {
+      text-align: center; padding: 3rem 1rem;
+      color: var(--muted); font-size: .9375rem;
+    }
+    #status.loading::before {
+      content: ''; display: inline-block; width: 16px; height: 16px;
+      border: 2px solid var(--border); border-top-color: var(--text);
+      border-radius: 50%; animation: spin .6s linear infinite;
+      margin-right: .5rem; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #status.error { color: var(--red); }
+    .patches-grid { display: flex; flex-direction: column; gap: 1rem; }
+    .patch-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.25rem;
+    }
+    .patch-hd {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: .75rem;
+    }
+    .patch-file {
+      font-family: 'JetBrains Mono', monospace; font-size: .8125rem;
+      color: var(--text);
+    }
+    .patch-meta {
+      display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem;
+    }
+    .patch-desc { font-size: .875rem; color: var(--muted); margin-bottom: .75rem; }
+    .patch-code {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 1rem; overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace; font-size: .775rem;
+      line-height: 1.65; color: var(--muted); white-space: pre;
+    }
+    .patch-empty {
+      text-align: center; padding: 4rem 1rem; color: var(--subtle);
+    }
+    .patch-empty h3 { font-size: 1.1rem; margin-bottom: .5rem; color: var(--muted); }
+    .patch-empty p { font-size: .875rem; }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+    .refresh-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      padding: .5rem 1rem; border-radius: 6px; font-family: inherit;
+      font-size: .8125rem; cursor: pointer; transition: all .15s;
+    }
+    .refresh-btn:hover { border-color: rgba(255,255,255,0.14); color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <div class="shield">&#x1F6E1;</div>
+        GuardRail - Mod Security Panel
+      </div>
+      <button class="refresh-btn" id="refreshBtn" type="button">&#x21BB; Refresh</button>
+    </header>
+    <div id="status" class="loading" role="status" aria-live="polite">Loading patches...</div>
+    <div id="patchesContainer" class="patches-grid" aria-live="polite"></div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -17,6 +17,7 @@ const demoRoutes = require('./routes/demo');
 const sessionRoutes = require('./routes/session');
 const webhookRoutes = require('./routes/webhook');
 const fixRoutes = require('./routes/fix');
+const patchRoutes = require('./routes/patch');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -60,6 +61,7 @@ app.use('/api/logs', logsRoutes);
 app.use('/api/demo', demoRoutes);
 app.use('/api/session', sessionRoutes);
 app.use('/api/fix', fixRoutes);
+app.use('/api/patch', patchRoutes);
 
 app.use((err, req, res, next) => {
   console.error('Error:', err);
