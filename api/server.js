@@ -1,8 +1,3 @@
-/**
- * GuardRail AI - Backend API Server
- * Production-grade SaaS platform
- */
-
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -17,6 +12,7 @@ const demoRoutes = require('./routes/demo');
 const sessionRoutes = require('./routes/session');
 const webhookRoutes = require('./routes/webhook');
 const fixRoutes = require('./routes/fix');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,10 +25,8 @@ app.use(cors({
   credentials: true
 }));
 
-// Webhook route needs raw body for signature validation — must be BEFORE express.json()
 app.use('/api/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
 
-// Body parsing for all other routes
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
@@ -47,13 +41,10 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0'
-  });
+  res.json({ status: 'healthy', timestamp: new Date().toISOString(), version: '1.0.0' });
 });
 
+app.use('/api/auth', authRoutes);
 app.use('/api/scan', scanRoutes);
 app.use('/api/result', resultRoutes);
 app.use('/api/logs', logsRoutes);
@@ -61,13 +52,6 @@ app.use('/api/demo', demoRoutes);
 app.use('/api/session', sessionRoutes);
 app.use('/api/fix', fixRoutes);
 
-// ---------------------------------------------------------------------------
-// Centralized error handler
-// - Logs full detail (message + stack) on the SERVER only
-// - Sends only a sanitized, client-safe message in the HTTP response
-// ---------------------------------------------------------------------------
-
-// Map of known safe, user-facing messages keyed by HTTP status code
 const CLIENT_ERROR_MESSAGES = {
   400: 'Bad request.',
   401: 'Authentication required.',
@@ -82,64 +66,25 @@ const CLIENT_ERROR_MESSAGES = {
 app.use((err, req, res, next) => {
   const status = err.status || err.statusCode || 500;
   const isDev = process.env.NODE_ENV === 'development';
-
-  // Always log the full error (message + stack) server-side for debugging
-  console.error(`[ERROR] ${req.method} ${req.path} — ${err.message}`);
-  if (err.stack) {
-    console.error(err.stack);
-  }
-
-  // Build client-safe response — never expose internal error messages or stack traces
-  const clientMessage =
-    CLIENT_ERROR_MESSAGES[status] ||
-    (status < 500 ? 'Request error.' : 'An unexpected error occurred. Please try again.');
-
-  const response = {
-    error: clientMessage,
-    status,
-    timestamp: new Date().toISOString(),
-  };
-
-  // In development only, include the original message for easier local debugging
-  if (isDev) {
-    response.detail = err.message;
-  }
-
+  console.error('[ERROR] ' + req.method + ' ' + req.path + ' - ' + err.message);
+  if (err.stack) console.error(err.stack);
+  const clientMessage = CLIENT_ERROR_MESSAGES[status] || (status < 500 ? 'Request error.' : 'An unexpected error occurred. Please try again.');
+  const response = { error: clientMessage, status, timestamp: new Date().toISOString() };
+  if (isDev) response.detail = err.message;
   res.status(status).json(response);
 });
 
-// 404 handler — intentionally omits the requested path to avoid reflecting
-// unsanitized user input back in the response body
 app.use((req, res) => {
-  res.status(404).json({
-    error: 'Endpoint not found.',
-    timestamp: new Date().toISOString(),
-  });
+  res.status(404).json({ error: 'Endpoint not found.', timestamp: new Date().toISOString() });
 });
 
 const server = app.listen(PORT, () => {
-  console.log(`🚀 GuardRail AI API running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔒 Rate limit: ${process.env.RATE_LIMIT || 50} requests/hour`);
+  console.log('GuardRail AI API running on port ' + PORT);
+  console.log('Environment: ' + (process.env.NODE_ENV || 'development'));
+  console.log('Rate limit: ' + (process.env.RATE_LIMIT || 50) + ' requests/hour');
 });
 
-// Graceful shutdown handling
-process.on('SIGTERM', () => {
-  console.log('🛑 SIGTERM received. Shutting down gracefully...');
-
-  server.close(() => {
-    console.log('✅ Server closed successfully.');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('🛑 SIGINT received. Shutting down gracefully...');
-
-  server.close(() => {
-    console.log('✅ Server closed successfully.');
-    process.exit(0);
-  });
-});
+process.on('SIGTERM', () => { server.close(() => process.exit(0)); });
+process.on('SIGINT', () => { server.close(() => process.exit(0)); });
 
 module.exports = app;
