@@ -497,9 +497,9 @@ function Hero() {
             <span className="code-file">app.js — GuardRail AI scan</span>
             <span className="badge badge-crit">● CRITICAL DETECTED</span>
           </div>
-          <div className="code-body">
-            <pre>
-{`<span class="cc">// ⚠  CWE-798: Hardcoded credentials — line 2, 5</span>
+           <div className="code-body">
+  <pre dangerouslySetInnerHTML={{ __html:
+`<span class="cc">// ⚠  CWE-798: Hardcoded credentials — line 2, 5</span>
 <span class="ck">const</span> stripe = <span class="ck">require</span>(<span class="cstr">'stripe'</span>)(<span class="cv">'sk-live-1234567890abcdef'</span>);
 <span class="ck">const</span> db = <span class="ck">new</span> Client({
   connectionString: <span class="cv">'postgresql://admin:password123@localhost/mydb'</span>
@@ -507,8 +507,8 @@ function Hero() {
 
 <span class="cc">// ✓  GuardRail patch applied — secrets moved to AWS Secrets Manager</span>
 <span class="ck">const</span> stripeKey = <span class="ck">await</span> <span class="cs">getSecret</span>(<span class="cstr">'stripe-api-key-abc123'</span>);
-<span class="ck">const</span> stripe = <span class="ck">require</span>(<span class="cstr">'stripe'</span>)(stripeKey.value);`}
-            </pre>
+<span class="ck">const</span> stripe = <span class="ck">require</span>(<span class="cstr">'stripe'</span>)(stripeKey.value);`
+  }} />
           </div>
         </div>
       </Reveal>
