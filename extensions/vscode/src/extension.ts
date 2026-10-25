@@ -4,6 +4,7 @@ import { DiagnosticsManager } from './diagnostics';
 import { CodeActionProvider } from './codeActions';
 import { StatusBarManager } from './statusBar';
 import { LogsPanel } from './logsPanel';
+import { FixPatch, isPatchCurrent, validatePatch } from './patch-application';
 
 let scanner: GuardRailScanner;
 let diagnosticsManager: DiagnosticsManager;
@@ -37,9 +38,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     const openDashboardCommand = vscode.commands.registerCommand('guardrailai.openDashboard', () => {
         const config = vscode.workspace.getConfiguration('guardrailai');
-        const apiUrl = config.get<string>('apiUrl', 'https://localhost:3001');
-        const secureUrl = apiUrl.replace('http://', 'https://');
-        vscode.env.openExternal(vscode.Uri.parse(`${secureUrl.replace(':3001', ':3000')}/dashboard`));
+        const apiUrl = config.get<string>('apiUrl', 'http://localhost:3001');
+        vscode.env.openExternal(vscode.Uri.parse(`${apiUrl.replace(':3001', ':3000')}/dashboard`));
     });
 
     const applyFixCommand = vscode.commands.registerCommand('guardrailai.applyFix', async (document: vscode.TextDocument) => {
@@ -49,23 +49,15 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        // Get the latest scan result for this document
-        const code = document.getText();
-        const filename = document.fileName.split('/').pop() || 'untitled';
-        
         try {
-            statusBar.setScanning();
-            const result = await scanner.scanCode(code, document.languageId, filename);
-            
-            if (result.patchedCode) {
-                await applyFixes(document, result.patchedCode);
-            } else {
-                vscode.window.showWarningMessage('No fix available for this file');
+            const sessionId = sessionIdMap.get(document.uri.toString());
+            if (!sessionId) {
+                vscode.window.showWarningMessage('No scan session found. Scan the file before requesting a fix.');
+                return;
             }
+            await generateAndApplyFixes(document, sessionId);
         } catch (error: any) {
             vscode.window.showErrorMessage(`Failed to apply fix: ${error.message}`);
-        } finally {
-            statusBar.reset();
         }
     });
 
@@ -194,7 +186,7 @@ async function scanDocument(document: vscode.TextDocument) {
             
             console.log('[GuardRail AI] Scan result:', JSON.stringify(result, null, 2));
             
-            if (result.status === 'completed') {
+            if (result.status === 'safe' || result.status === 'vulnerable' || result.status === 'completed') {
                 const vulnerabilityCount = result.vulnerabilities?.length || 0;
                 
                 console.log('[GuardRail AI] Vulnerabilities found:', vulnerabilityCount);
@@ -252,7 +244,9 @@ async function scanDocument(document: vscode.TextDocument) {
             
             console.error('[GuardRail AI] Error:', error);
             
-            if (error.message?.includes('No response')) {
+            if (error.message?.includes('timed out')) {
+                vscode.window.showErrorMessage(`❌ ${error.message}`);
+            } else if (error.message?.includes('No response')) {
                 vscode.window.showErrorMessage(
                     '❌ GuardRail AI backend is not running. Please start the server: cd api && npm start',
                     'Open Settings'
@@ -355,7 +349,7 @@ async function generateAndApplyFixes(document: vscode.TextDocument, sessionId: s
             if (fixResult.patch && fixResult.patch.secureCode) {
                 progress.report({ message: '✅ Patches generated!' });
                 await new Promise(resolve => setTimeout(resolve, 500));
-                await applyFixes(document, fixResult.patch.secureCode);
+                await applyFixes(document, fixResult.patch);
             } else {
                 vscode.window.showWarningMessage('No fixes available');
             }
@@ -366,16 +360,21 @@ async function generateAndApplyFixes(document: vscode.TextDocument, sessionId: s
     });
 }
 
-async function applyFixes(document: vscode.TextDocument, patchedCode: string | undefined) {
-    if (!patchedCode) {
-        vscode.window.showWarningMessage('No fixes available');
+async function applyFixes(document: vscode.TextDocument, patch: FixPatch | undefined) {
+    const validationError = validatePatch(patch);
+    if (validationError || !patch) {
+        vscode.window.showErrorMessage(validationError || 'GuardRail AI returned an invalid patch.');
+        return;
+    }
+    if (!isPatchCurrent(patch, document.getText())) {
+        vscode.window.showWarningMessage('The file changed after the scan. Please scan it again before applying this patch.');
         return;
     }
 
     try {
         // Create a temporary document with the patched code for preview
         const tempDoc = await vscode.workspace.openTextDocument({
-            content: patchedCode,
+            content: patch.secureCode,
             language: document.languageId
         });
 
@@ -402,18 +401,22 @@ async function applyFixes(document: vscode.TextDocument, patchedCode: string | u
                 document.positionAt(document.getText().length)
             );
             
-            edit.replace(document.uri, fullRange, patchedCode);
+            if (!isPatchCurrent(patch, document.getText())) {
+                vscode.window.showWarningMessage('The file changed while reviewing the patch. The fix was not applied.');
+                return;
+            }
+            edit.replace(document.uri, fullRange, patch.secureCode);
             const success = await vscode.workspace.applyEdit(edit);
             
             if (success) {
-                await document.save();
+                const saved = await document.save();
+                if (!saved || document.getText() !== patch.secureCode) {
+                    throw new Error('The patched file could not be saved correctly.');
+                }
                 diagnosticsManager.clear(document.uri);
                 vscode.window.showInformationMessage('✅ Security fixes applied successfully!');
-                
-                // Close the diff view
-                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
             } else {
-                vscode.window.showErrorMessage('Failed to apply fixes');
+                vscode.window.showErrorMessage('Failed to apply fixes: VS Code rejected the workspace edit.');
             }
         }
     } catch (error: any) {

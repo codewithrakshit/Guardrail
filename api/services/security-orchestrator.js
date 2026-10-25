@@ -10,6 +10,7 @@ const PatchGenerator = require('./patch-generator');
 const EventLogger = require('./event-logger');
 const S3Storage = require('./s3-storage');
 const SessionManager = require('./session-manager');
+const { v4: uuidv4 } = require('uuid');
 
 class SecurityOrchestrator {
   constructor() {
@@ -40,12 +41,12 @@ class SecurityOrchestrator {
         fileSize: code.length
       });
 
-      // Step 1: Store encrypted code in S3
-      console.log(`[${sessionId}] Storing code in S3...`);
+      // Step 1: Store source in the configured local data directory.
+      console.log(`[${sessionId}] Storing code locally...`);
       await this.logger.logScanProgress({
         sessionId,
         step: 'storing',
-        details: 'Storing code in S3'
+        details: 'Storing code locally'
       });
       await this.storage.storeCode(sessionId, code, filename);
 
@@ -62,6 +63,7 @@ class SecurityOrchestrator {
         language,
         filename
       });
+      const timing = analysis.timing || {};
 
       if (!analysis.risk_detected) {
         await this.sessionManager.updateSession(sessionId, {
@@ -73,14 +75,18 @@ class SecurityOrchestrator {
           sessionId,
           status: 'safe',
           language,
-          duration: Date.now() - startTime
+          duration: Date.now() - startTime,
+          inferenceDurationMs: timing.inferenceDurationMs,
+          parsingDurationMs: timing.parsingDurationMs
         });
 
         return {
           status: 'safe',
           vulnerabilities: [],
           severity: 'none',
-          duration: Date.now() - startTime
+          duration: Date.now() - startTime,
+          inferenceDurationMs: timing.inferenceDurationMs,
+          parsingDurationMs: timing.parsingDurationMs
         };
       }
 
@@ -120,7 +126,9 @@ class SecurityOrchestrator {
           vulnerabilityType: vulnerabilityResults.map(v => v.type).join(', '),
           severity: this.getHighestSeverity(vulnerabilityResults),
           language,
-          duration: Date.now() - startTime
+          duration: Date.now() - startTime,
+          inferenceDurationMs: timing.inferenceDurationMs,
+          parsingDurationMs: timing.parsingDurationMs
         });
 
         return {
@@ -131,31 +139,37 @@ class SecurityOrchestrator {
             available: false,
             message: 'Click "Apply Fix" to generate patches'
           },
-          duration: Date.now() - startTime
+          duration: Date.now() - startTime,
+          inferenceDurationMs: timing.inferenceDurationMs,
+          parsingDurationMs: timing.parsingDurationMs
         };
       }
 
       // Full remediation flow (when user clicks "Apply Fix")
-      return await this.generateRemediation(sessionId, code, language, filename, allVulns, vulnerabilityResults, startTime);
+      return await this.generateRemediation(
+        sessionId, code, language, filename, allVulns, vulnerabilityResults, startTime, timing
+      );
 
     } catch (error) {
       console.error(`[${sessionId}] Orchestration error:`, error.message);
       console.error(error.stack);
 
-      // Log a structured error record — store the message for audit purposes
-      // but keep the stack trace server-side only (not persisted to DynamoDB)
-      await this.logger.logError({
-        sessionId,
-        error: error.message,
-        // stack intentionally omitted to prevent leakage via the logs API
-        context: 'processCode'
-      });
+      // Logging must never replace the original scan failure.
+      try {
+        await this.logger.logError({
+          sessionId,
+          error: error.message,
+          context: 'processCode'
+        });
+      } catch (loggingError) {
+        console.error(`[${sessionId}] Failed to persist orchestration error: ${loggingError.message}`);
+      }
 
       throw error;
     }
   }
 
-  async generateRemediation(sessionId, code, language, filename, allVulns, vulnerabilityResults, startTime) {
+  async generateRemediation(sessionId, code, language, filename, allVulns, vulnerabilityResults, startTime, timing = {}) {
     try {
       // Log fix generation start
       await this.logger.logFixGeneration({
@@ -176,13 +190,13 @@ class SecurityOrchestrator {
         
         const strategy = await this.remediation.createStrategy(vuln);
 
-        // Create AWS secret if needed
+        // Create a local-only secret reference if needed.
         if (strategy.requiresSecretStorage && vuln.extracted_value) {
-          console.log(`[${sessionId}] Creating AWS secret...`);
+          console.log(`[${sessionId}] Creating local-only secret...`);
           await this.logger.logFixGeneration({
             sessionId,
             step: 'secret',
-            details: 'Provisioning AWS Secrets Manager secret'
+            details: 'Provisioning local-only secret (not a managed vault)'
           });
           
           const secretRef = await this.secretManager.createSecret({
@@ -222,13 +236,13 @@ class SecurityOrchestrator {
         } : null,
         language
       });
+      patch.patchId = uuidv4();
 
-      // Store patch in S3
-      console.log(`[${sessionId}] Storing patch in S3...`);
+      // Store patch locally.
       await this.logger.logFixGeneration({
         sessionId,
         step: 'storing',
-        details: 'Storing patch in S3'
+        details: 'Storing patch locally'
       });
       await this.storage.storePatch(sessionId, patch);
 
@@ -256,7 +270,9 @@ class SecurityOrchestrator {
         language,
         secretCreated: hasSecrets,
         confidence: vulnerabilityResults[0].confidence,
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
+        inferenceDurationMs: timing.inferenceDurationMs,
+        parsingDurationMs: timing.parsingDurationMs
       });
 
       return {
@@ -267,7 +283,9 @@ class SecurityOrchestrator {
           available: true,
           secretCreated: hasSecrets
         },
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
+        inferenceDurationMs: timing.inferenceDurationMs,
+        parsingDurationMs: timing.parsingDurationMs
       };
     } catch (error) {
       console.error(`[${sessionId}] Remediation error:`, error);

@@ -41,8 +41,8 @@ router.post('/:sessionId', async (req, res, next) => {
       });
     }
 
-    // Get original code from S3
-    console.log(`[${sessionId}] Retrieving original code from S3...`);
+    // Get original code from local storage.
+    console.log(`[${sessionId}] Retrieving original code locally...`);
     const storage = new S3Storage();
     const originalCode = await storage.getCode(sessionId);
 
@@ -63,14 +63,24 @@ router.post('/:sessionId', async (req, res, next) => {
 
     console.log(`[${sessionId}] Fix generation complete`);
 
-    // Get the patch from S3
+    // Get the patch from local storage.
     const patchData = await storage.getPatch(sessionId);
+    if (
+      typeof patchData.patchId !== 'string' ||
+      !patchData.patchId ||
+      typeof patchData.originalCode !== 'string' ||
+      typeof patchData.secureCode !== 'string' ||
+      !patchData.secureCode.trim()
+    ) {
+      throw new Error('Stored patch is invalid or incomplete');
+    }
 
     res.json({
       sessionId,
       status: 'fixed',
       patch: {
         available: true,
+        patchId: patchData.patchId,
         secureCode: patchData.secureCode,
         originalCode: patchData.originalCode,
         diff: patchData.diff,

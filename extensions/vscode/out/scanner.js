@@ -56,7 +56,11 @@ class GuardRailScanner {
     }
     getTimeout() {
         const config = vscode.workspace.getConfiguration('guardrailai');
-        return config.get('timeout', 60000); // Increased to 60 seconds
+        return config.get('timeout', 120000);
+    }
+    getFixTimeout() {
+        const config = vscode.workspace.getConfiguration('guardrailai');
+        return config.get('fixTimeout', 300000);
     }
     async scanCode(code, language, filename) {
         try {
@@ -68,13 +72,15 @@ class GuardRailScanner {
                 filename
             });
             console.log('[GuardRail] Scan response:', scanResponse.data);
-            // Check if we got immediate results (scan-only mode)
-            if (scanResponse.data.vulnerabilities) {
+            // The local API returns scan results immediately with status
+            // "safe" or "vulnerable".
+            if (Array.isArray(scanResponse.data.vulnerabilities)) {
                 return {
                     sessionId: scanResponse.data.sessionId,
-                    status: 'completed',
+                    status: scanResponse.data.status,
                     vulnerabilities: this.mapVulnerabilities(scanResponse.data.vulnerabilities),
-                    vulnerabilitiesDetected: scanResponse.data.vulnerabilities.length
+                    vulnerabilitiesDetected: scanResponse.data.vulnerabilities.length,
+                    error: scanResponse.data.error
                 };
             }
             const { sessionId } = scanResponse.data;
@@ -83,7 +89,17 @@ class GuardRailScanner {
         }
         catch (error) {
             console.error('[GuardRail] Scan error:', error);
-            if (error.response) {
+            if (this.isTimeoutError(error)) {
+                throw new Error('The security scan timed out while waiting for local Ollama inference. Please try again or increase guardrailai.timeout.');
+            }
+            else if (error.response) {
+                if (error.response.status === 429) {
+                    const retryAfter = this.getRetryAfter(error.response.headers?.['retry-after']);
+                    const retryMessage = retryAfter
+                        ? ` Please try again in ${retryAfter}.`
+                        : ' Please try again later.';
+                    throw new Error(`GuardRail AI rate limit exceeded.${retryMessage}`);
+                }
                 throw new Error(`API Error: ${error.response.data.error || error.message}`);
             }
             else if (error.request) {
@@ -98,12 +114,32 @@ class GuardRailScanner {
         return vulns.map(v => ({
             type: v.type,
             severity: v.severity,
-            line: v.affectedLines?.[0] || 1,
+            line: v.affectedLines?.[0] ?? v.affected_lines?.[0] ?? 1,
             column: 0,
             message: `${v.severity.toUpperCase()}: ${v.type.replace(/_/g, ' ')}`,
             description: v.explanation,
             cwe: v.cwe
         }));
+    }
+    isTimeoutError(error) {
+        return error?.code === 'ECONNABORTED' ||
+            error?.code === 'ETIMEDOUT' ||
+            error?.message?.toLowerCase().includes('timeout');
+    }
+    getRetryAfter(value) {
+        if (!value) {
+            return null;
+        }
+        const seconds = Number(value);
+        if (Number.isFinite(seconds) && seconds > 0) {
+            return `${Math.ceil(seconds)} seconds`;
+        }
+        const retryAt = Date.parse(value);
+        if (Number.isNaN(retryAt)) {
+            return null;
+        }
+        const remainingSeconds = Math.ceil((retryAt - Date.now()) / 1000);
+        return remainingSeconds > 0 ? `${remainingSeconds} seconds` : null;
     }
     async pollForResults(sessionId, maxAttempts = 30) {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -141,14 +177,19 @@ class GuardRailScanner {
     async generateFix(sessionId) {
         try {
             console.log('[GuardRail] Generating fix for session:', sessionId);
-            const response = await this.client.post(`/api/fix/${sessionId}`);
+            const response = await this.client.post(`/api/fix/${sessionId}`, undefined, {
+                timeout: this.getFixTimeout()
+            });
             console.log('[GuardRail] Fix response:', response.data);
             // Return the response data directly - it already has the correct structure
             return response.data;
         }
         catch (error) {
             console.error('[GuardRail] Fix generation error:', error);
-            if (error.response) {
+            if (this.isTimeoutError(error)) {
+                throw new Error('Fix generation timed out while waiting for local Ollama patch generation. Please increase guardrailai.fixTimeout or OLLAMA_TIMEOUT_MS.');
+            }
+            else if (error.response) {
                 throw new Error(`Fix generation failed: ${error.response.data.error || error.message}`);
             }
             else {

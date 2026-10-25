@@ -1,146 +1,62 @@
 /**
- * S3 Storage Service
- * Handles temporary encrypted storage with TTL
+ * Local filesystem replacement for the historical S3 storage interface.
  */
 
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const fs = require('fs');
+const path = require('path');
+const {
+  ensureDataDirectories,
+  sessionDirectory,
+  safeFilename,
+  assertIdentifier,
+  writeJsonAtomic,
+  readJson
+} = require('./local-data');
 
 class S3Storage {
-  constructor() {
-    this.client = new S3Client({ 
-      region: process.env.AWS_REGION || 'us-east-1' 
-    });
-    this.bucket = process.env.S3_BUCKET || 'guardrail-sessions';
-  }
-
   async storeCode(sessionId, code, filename) {
-    const key = `sessions/${sessionId}/original/${filename}`;
-
-    try {
-      const command = new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: code,
-        ServerSideEncryption: 'AES256',
-        Metadata: {
-          sessionId,
-          filename,
-          uploadedAt: new Date().toISOString()
-        },
-        // Set lifecycle rule for 24h TTL
-        Tagging: 'TTL=24h&Type=original'
-      });
-
-      await this.client.send(command);
-      console.log(`[${sessionId}] Code stored in S3: ${key}`);
-
-    } catch (error) {
-      console.error(`[${sessionId}] S3 storage failed: ${error.message}`);
-      console.error(error.stack);
-      throw new Error(`Failed to store code: ${error.message}`);
-    }
+    assertIdentifier(sessionId, 'session ID');
+    await ensureDataDirectories();
+    const directory = sessionDirectory(sessionId);
+    await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
+    const filePath = path.join(directory, `original.${safeFilename(filename).split('.').pop() || 'txt'}`);
+    await fs.promises.writeFile(filePath, code, { encoding: 'utf8', mode: 0o600 });
+    return filePath;
   }
 
   async storePatch(sessionId, patch) {
-    const key = `sessions/${sessionId}/patch/secure-code.json`;
-
-    try {
-      const command = new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: JSON.stringify(patch, null, 2),
-        ContentType: 'application/json',
-        ServerSideEncryption: 'AES256',
-        Metadata: {
-          sessionId,
-          createdAt: new Date().toISOString()
-        },
-        Tagging: 'TTL=24h&Type=patch'
-      });
-
-      await this.client.send(command);
-      console.log(`[${sessionId}] Patch stored in S3: ${key}`);
-
-    } catch (error) {
-      console.error(`[${sessionId}] Patch storage failed: ${error.message}`);
-      console.error(error.stack);
-      throw new Error(`Failed to store patch: ${error.message}`);
-    }
+    assertIdentifier(sessionId, 'session ID');
+    await ensureDataDirectories();
+    const directory = sessionDirectory(sessionId);
+    await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
+    const filePath = path.join(directory, 'patch.json');
+    await writeJsonAtomic(filePath, patch);
+    return filePath;
   }
 
   async getCode(sessionId) {
+    assertIdentifier(sessionId, 'session ID');
+    const directory = sessionDirectory(sessionId);
     try {
-      // List objects to find the original code file
-      const { ListObjectsV2Command } = require('@aws-sdk/client-s3');
-      const listCommand = new ListObjectsV2Command({
-        Bucket: this.bucket,
-        Prefix: `sessions/${sessionId}/original/`
-      });
-
-      const listResponse = await this.client.send(listCommand);
-      
-      if (!listResponse.Contents || listResponse.Contents.length === 0) {
-        return null;
-      }
-
-      const key = listResponse.Contents[0].Key;
-
-      const command = new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: key
-      });
-
-      const response = await this.client.send(command);
-      return await response.Body.transformToString();
-
+      const entries = await fs.promises.readdir(directory);
+      const source = entries.find(entry => entry.startsWith('original.'));
+      return source ? await fs.promises.readFile(path.join(directory, source), 'utf8') : null;
     } catch (error) {
-      console.error(`[${sessionId}] Code retrieval failed: ${error.message}`);
-      console.error(error.stack);
-      return null;
+      if (error.code === 'ENOENT') return null;
+      throw new Error(`Failed to retrieve local code: ${error.message}`);
     }
   }
 
   async getPatch(sessionId) {
-    const key = `sessions/${sessionId}/patch/secure-code.json`;
-
-    try {
-      const command = new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: key
-      });
-
-      const response = await this.client.send(command);
-      const body = await response.Body.transformToString();
-      return JSON.parse(body);
-
-    } catch (error) {
-      console.error(`[${sessionId}] Patch retrieval failed: ${error.message}`);
-      console.error(error.stack);
-      throw new Error(`Failed to retrieve patch: ${error.message}`);
-    }
+    assertIdentifier(sessionId, 'session ID');
+    const patch = await readJson(path.join(sessionDirectory(sessionId), 'patch.json'));
+    if (!patch) throw new Error('Patch not found');
+    return patch;
   }
 
   async deleteSession(sessionId) {
-    const keys = [
-      `sessions/${sessionId}/original/`,
-      `sessions/${sessionId}/patch/`
-    ];
-
-    try {
-      for (const keyPrefix of keys) {
-        const command = new DeleteObjectCommand({
-          Bucket: this.bucket,
-          Key: keyPrefix
-        });
-        await this.client.send(command);
-      }
-
-      console.log(`[${sessionId}] Session files deleted from S3`);
-
-    } catch (error) {
-      console.error(`[${sessionId}] S3 deletion failed: ${error.message}`);
-      console.error(error.stack);
-    }
+    assertIdentifier(sessionId, 'session ID');
+    await fs.promises.rm(sessionDirectory(sessionId), { recursive: true, force: true });
   }
 }
 

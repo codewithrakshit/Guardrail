@@ -17,6 +17,8 @@ const demoRoutes = require('./routes/demo');
 const sessionRoutes = require('./routes/session');
 const webhookRoutes = require('./routes/webhook');
 const fixRoutes = require('./routes/fix');
+const http = require('http');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -39,6 +41,7 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 const limiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: process.env.RATE_LIMIT || 50,
+  skip: req => req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS',
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false
@@ -46,11 +49,39 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
-app.get('/health', (req, res) => {
+function checkOllama() {
+  const baseUrl = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+  const model = process.env.OLLAMA_MODEL || 'rafw007/qwen35-claude-coder:4b';
+  const url = new URL(`${baseUrl}/api/tags`);
+  const transport = url.protocol === 'https:' ? https : http;
+  return new Promise(resolve => {
+    const request = transport.get(url, { timeout: 3000 }, response => {
+      let body = '';
+      response.on('data', chunk => { body += chunk; });
+      response.on('end', () => {
+        try {
+          const tags = JSON.parse(body).models || [];
+          resolve({
+            reachable: response.statusCode >= 200 && response.statusCode < 300,
+            modelAvailable: tags.some(item => item.name === model)
+          });
+        } catch {
+          resolve({ reachable: false, modelAvailable: false });
+        }
+      });
+    });
+    request.on('timeout', () => request.destroy());
+    request.on('error', () => resolve({ reachable: false, modelAvailable: false }));
+  });
+}
+
+app.get('/health', async (req, res) => {
+  const ollama = await checkOllama();
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    services: { api: 'available', ollama }
   });
 });
 

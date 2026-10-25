@@ -16,7 +16,7 @@ class RemediationEngine {
     switch (analysis.risk_type) {
       case 'hardcoded_secret':
         strategy.requiresSecretStorage = true;
-        strategy.approach = 'Extract secret to AWS Secrets Manager and implement secure runtime retrieval';
+        strategy.approach = 'Extract secret to the explicitly local-only secret provider and implement secure runtime retrieval';
         strategy.confidence = 95;
         strategy.estimatedTime = 3;
         break;

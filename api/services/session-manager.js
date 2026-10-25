@@ -1,122 +1,67 @@
 /**
- * Session Manager
- * Handles session lifecycle and isolation
+ * Local session lifecycle and persistence.
  */
 
-const { DynamoDBClient, PutItemCommand, GetItemCommand, UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
+const {
+  ensureDataDirectories,
+  sessionFile,
+  assertIdentifier,
+  writeJsonAtomic,
+  readJson
+} = require('./local-data');
+
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 class SessionManager {
   constructor() {
-    if (SessionManager.instance) {
-      return SessionManager.instance;
-    }
-    
-    this.client = new DynamoDBClient({ 
-      region: process.env.AWS_REGION || 'us-east-1' 
-    });
-    this.tableName = process.env.DYNAMODB_TABLE || 'GuardRailSessions';
-    
+    if (SessionManager.instance) return SessionManager.instance;
     SessionManager.instance = this;
   }
 
   async createSession({ sessionId, language, filename, clientIp, codeLength }) {
-    const item = {
-      session_id: { S: sessionId },
-      created_at: { S: new Date().toISOString() },
-      expires_at: { N: String(Date.now() + 24 * 60 * 60 * 1000) },
-      language: { S: language },
-      filename: { S: filename },
-      client_ip: { S: clientIp },
-      code_length: { N: String(codeLength) },
-      status: { S: 'processing' },
-      vulnerabilities_detected: { N: '0' },
-      secret_created: { BOOL: false }
+    assertIdentifier(sessionId, 'session ID');
+    const now = Date.now();
+    const session = {
+      session_id: sessionId,
+      created_at: new Date(now).toISOString(),
+      expires_at: now + SESSION_TTL_MS,
+      language,
+      filename,
+      client_ip: clientIp,
+      code_length: codeLength,
+      status: 'processing',
+      vulnerabilities_detected: 0,
+      secret_created: false
     };
-
-    try {
-      const command = new PutItemCommand({
-        TableName: this.tableName,
-        Item: item
-      });
-
-      await this.client.send(command);
-      console.log(`[${sessionId}] Session created`);
-
-    } catch (error) {
-      console.error(`[${sessionId}] Session creation failed: ${error.message}`);
-      console.error(error.stack);
-      throw new Error(`Failed to create session: ${error.message}`);
-    }
+    await ensureDataDirectories();
+    await writeJsonAtomic(sessionFile(sessionId), session);
+    return session;
   }
 
   async updateSession(sessionId, updates) {
-    try {
-      const updateExpression = [];
-      const expressionAttributeValues = {};
-      const expressionAttributeNames = {};
-
-      Object.entries(updates).forEach(([key, value], index) => {
-        const placeholder = `:val${index}`;
-        const namePlaceholder = `#attr${index}`;
-        updateExpression.push(`${namePlaceholder} = ${placeholder}`);
-        expressionAttributeNames[namePlaceholder] = key;
-        
-        if (typeof value === 'string') {
-          expressionAttributeValues[placeholder] = { S: value };
-        } else if (typeof value === 'number') {
-          expressionAttributeValues[placeholder] = { N: String(value) };
-        } else if (typeof value === 'boolean') {
-          expressionAttributeValues[placeholder] = { BOOL: value };
-        }
-      });
-
-      const command = new UpdateItemCommand({
-        TableName: this.tableName,
-        Key: { session_id: { S: sessionId } },
-        UpdateExpression: `SET ${updateExpression.join(', ')}`,
-        ExpressionAttributeNames: expressionAttributeNames,
-        ExpressionAttributeValues: expressionAttributeValues
-      });
-
-      await this.client.send(command);
-      console.log(`[${sessionId}] Session updated`);
-
-    } catch (error) {
-      console.error(`[${sessionId}] Session update failed: ${error.message}`);
-      console.error(error.stack);
-    }
+    assertIdentifier(sessionId, 'session ID');
+    const existing = await this.getSession(sessionId);
+    if (!existing) throw new Error(`Session not found: ${sessionId}`);
+    const allowedUpdates = [
+      'language', 'filename', 'client_ip', 'code_length', 'status',
+      'vulnerabilities_detected', 'secret_created'
+    ];
+    const safeUpdates = Object.fromEntries(
+      Object.entries(updates || {}).filter(([key]) => allowedUpdates.includes(key))
+    );
+    const updated = { ...existing, ...safeUpdates };
+    await writeJsonAtomic(sessionFile(sessionId), updated);
+    return updated;
   }
 
   async getSession(sessionId) {
-    try {
-      const command = new GetItemCommand({
-        TableName: this.tableName,
-        Key: { session_id: { S: sessionId } }
-      });
-
-      const response = await this.client.send(command);
-      
-      if (!response.Item) {
-        return null;
-      }
-
-      return this.unmarshallItem(response.Item);
-
-    } catch (error) {
-      console.error(`[${sessionId}] Session retrieval failed: ${error.message}`);
-      console.error(error.stack);
+    assertIdentifier(sessionId, 'session ID');
+    const session = await readJson(sessionFile(sessionId));
+    if (!session) return null;
+    if (typeof session.expires_at !== 'number' || session.expires_at <= Date.now()) {
       return null;
     }
-  }
-
-  unmarshallItem(item) {
-    const result = {};
-    for (const [key, value] of Object.entries(item)) {
-      if (value.S) result[key] = value.S;
-      else if (value.N) result[key] = parseFloat(value.N);
-      else if (value.BOOL !== undefined) result[key] = value.BOOL;
-    }
-    return result;
+    return session;
   }
 }
 

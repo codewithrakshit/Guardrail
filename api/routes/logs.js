@@ -1,172 +1,95 @@
 /**
- * Logs Route - Session logs and analytics
+ * Local session logs and analytics.
  */
 
 const express = require('express');
 const router = express.Router();
-const { DynamoDBClient, ScanCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
-const { CloudWatchLogsClient, FilterLogEventsCommand } = require('@aws-sdk/client-cloudwatch-logs');
 const EventLogger = require('../services/event-logger');
-
-const dynamodb = new DynamoDBClient({ 
-  region: process.env.AWS_REGION || 'us-east-1' 
-});
-
-const cloudwatch = new CloudWatchLogsClient({
-  region: process.env.AWS_REGION || 'us-east-1'
-});
 
 const eventLogger = new EventLogger();
 
-/**
- * GET /api/logs/:sessionId
- * Get all logs for a specific session from memory cache
- */
-router.get('/:sessionId', async (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
-    const { sessionId } = req.params;
-    
-    // Get logs from event logger (uses cache)
-    const logs = await eventLogger.getSessionLogs(sessionId);
-
-    res.json({
-      sessionId,
-      logs: logs,
-      totalLogs: logs.length
-    });
-
+    const sessionId = req.query.sessionId;
+    const logs = sessionId ? await eventLogger.getSessionLogs(sessionId) : await eventLogger.getAllLogs();
+    res.json({ logs, totalLogs: logs.length });
   } catch (error) {
-    console.error('Session logs error:', error);
     next(error);
   }
 });
 
-/**
- * GET /api/logs/:sessionId/errors
- * Get only error logs for a session
- */
+router.get('/stats', async (req, res, next) => {
+  try {
+    const logs = await eventLogger.getAllLogs();
+    const scans = logs.filter(log => log.event_type === 'scan_complete');
+    const stats = {
+      totalScans: scans.length,
+      vulnerabilitiesFound: scans.filter(log => log.metadata?.vulnerabilityType).length,
+      secretsCreated: scans.filter(log => log.metadata?.secretCreated).length,
+      averageScanTime: scans.length
+        ? Math.round(scans.reduce((sum, log) => sum + Number(log.metadata?.duration || 0), 0) / scans.length)
+        : 0,
+      severityBreakdown: { critical: 0, high: 0, medium: 0, low: 0 },
+      vulnerabilityTypes: {}
+    };
+    for (const scan of scans) {
+      const severity = scan.metadata?.severity;
+      if (Object.prototype.hasOwnProperty.call(stats.severityBreakdown, severity)) {
+        stats.severityBreakdown[severity]++;
+      }
+      const types = String(scan.metadata?.vulnerabilityType || '')
+        .split(', ').filter(Boolean);
+      for (const type of types) {
+        stats.vulnerabilityTypes[type] = (stats.vulnerabilityTypes[type] || 0) + 1;
+      }
+    }
+    res.json(stats);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/recent', async (req, res, next) => {
+  try {
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 10;
+    const logs = await eventLogger.getAllLogs();
+    const events = logs.filter(log => log.event_type === 'scan_complete')
+      .slice(-limit).reverse().map(log => ({
+        sessionId: log.sessionId,
+        timestamp: log.timestamp,
+        status: log.metadata?.status,
+        vulnerabilityType: log.metadata?.vulnerabilityType,
+        severity: log.metadata?.severity,
+        duration: log.metadata?.duration ?? null
+      }));
+    res.json({ events });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/:sessionId/errors', async (req, res, next) => {
   try {
     const { sessionId } = req.params;
-    const tableName = process.env.EVENTS_TABLE || 'GuardRailEvents';
-
-    const command = new ScanCommand({
-      TableName: tableName,
-      FilterExpression: 'session_id = :sid AND event_type = :type',
-      ExpressionAttributeValues: {
-        ':sid': { S: sessionId },
-        ':type': { S: 'error' }
-      }
-    });
-
-    const response = await dynamodb.send(command);
-    const errors = (response.Items || []).map(item => ({
-      timestamp: item.timestamp?.S,
-      // Return only the sanitized message — never expose stack traces to clients
-      message: item.error_message?.S || 'An error occurred',
-      context: item.context?.S
-      // stack_trace intentionally omitted: internal implementation detail
+    const logs = await eventLogger.getSessionLogs(sessionId);
+    const errors = logs.filter(log => log.event_type === 'error').map(log => ({
+      timestamp: log.timestamp,
+      message: log.message,
+      context: log.metadata?.context
     }));
-
     res.json({ sessionId, errors });
-
   } catch (error) {
-    console.error('Error logs retrieval failed:', error);
     next(error);
   }
 });
 
-/**
- * GET /api/logs/stats
- * Get platform statistics
- */
-router.get('/stats', async (req, res, next) => {
+router.get('/:sessionId', async (req, res, next) => {
   try {
-    const tableName = process.env.EVENTS_TABLE || 'GuardRailEvents';
-
-    const command = new ScanCommand({
-      TableName: tableName,
-      ProjectionExpression: 'vulnerability_type, severity, scan_duration, secret_created'
-    });
-
-    const response = await dynamodb.send(command);
-    const items = response.Items || [];
-
-    // Calculate statistics
-    const stats = {
-      totalScans: items.length,
-      vulnerabilitiesFound: items.filter(i => i.vulnerability_type).length,
-      secretsCreated: items.filter(i => i.secret_created?.BOOL).length,
-      averageScanTime: 0,
-      severityBreakdown: {
-        critical: 0,
-        high: 0,
-        medium: 0,
-        low: 0
-      },
-      vulnerabilityTypes: {}
-    };
-
-    let totalDuration = 0;
-
-    items.forEach(item => {
-      // Severity breakdown
-      if (item.severity?.S) {
-        stats.severityBreakdown[item.severity.S]++;
-      }
-
-      // Vulnerability types
-      if (item.vulnerability_type?.S) {
-        const type = item.vulnerability_type.S;
-        stats.vulnerabilityTypes[type] = (stats.vulnerabilityTypes[type] || 0) + 1;
-      }
-
-      // Average scan time
-      if (item.scan_duration?.N) {
-        totalDuration += parseFloat(item.scan_duration.N);
-      }
-    });
-
-    stats.averageScanTime = items.length > 0 
-      ? Math.round(totalDuration / items.length) 
-      : 0;
-
-    res.json(stats);
-
+    const { sessionId } = req.params;
+    const logs = await eventLogger.getSessionLogs(sessionId);
+    res.json({ sessionId, logs, totalLogs: logs.length });
   } catch (error) {
-    console.error('Stats retrieval error:', error);
-    next(error);
-  }
-});
-
-/**
- * GET /api/logs/recent
- * Get recent scan events
- */
-router.get('/recent', async (req, res, next) => {
-  try {
-    const limit = parseInt(req.query.limit) || 10;
-    const tableName = process.env.EVENTS_TABLE || 'GuardRailEvents';
-
-    const command = new ScanCommand({
-      TableName: tableName,
-      Limit: limit
-    });
-
-    const response = await dynamodb.send(command);
-    const items = (response.Items || []).map(item => ({
-      sessionId: item.session_id?.S,
-      timestamp: item.timestamp?.S,
-      status: item.status?.S,
-      vulnerabilityType: item.vulnerability_type?.S,
-      severity: item.severity?.S,
-      duration: item.scan_duration?.N ? parseFloat(item.scan_duration.N) : null
-    }));
-
-    res.json({ events: items });
-
-  } catch (error) {
-    console.error('Recent logs error:', error);
     next(error);
   }
 });

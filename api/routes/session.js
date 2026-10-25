@@ -26,7 +26,7 @@ router.delete('/:sessionId', async (req, res, next) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // Delete S3 files
+    // Delete local session files
     const storage = new S3Storage();
     await storage.deleteSession(sessionId);
 

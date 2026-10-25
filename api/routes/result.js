@@ -27,7 +27,7 @@ router.get('/:sessionId', async (req, res, next) => {
       return res.status(410).json({ error: 'Session expired' });
     }
 
-    // Get patch from S3
+    // Get patch from local storage.
     const storage = new S3Storage();
     let patch = null;
     
@@ -51,6 +51,7 @@ router.get('/:sessionId', async (req, res, next) => {
       patchedCode: patch && patch.secureCode ? patch.secureCode : null,
       patch: patch ? {
         available: true,
+        patchId: patch.patchId,
         diff: patch.diff,
         explanation: patch.explanation,
         securityBenefit: patch.securityBenefit,

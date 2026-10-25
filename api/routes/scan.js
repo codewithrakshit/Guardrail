@@ -76,6 +76,8 @@ const processScan = async (req, res, next) => {
       vulnerabilities: result.vulnerabilities,
       severity: result.severity,
       scanDuration: result.duration,
+      inferenceDurationMs: result.inferenceDurationMs,
+      parsingDurationMs: result.parsingDurationMs,
       timestamp: new Date().toISOString()
     });
 
